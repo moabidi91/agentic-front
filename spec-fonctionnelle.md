@@ -33,7 +33,7 @@ Welcome  →  Sign in (étape 1)  →  Sign in (étape 2)  →  Connecting  → 
   → menu utilisateur → Welcome | Sign in | State machine | Live database | Reset configuration
 
 Événement transverse, à tout moment en session :
-  → jeton expiré → pop-in 401 → reprise automatique, aucune perte de contexte
+  → jeton expiré → session mise en pause → bandeau + pop-in d'identifiants → reprise, aucune perte de contexte
 ```
 
 Le parcours n'est linéaire qu'à la première connexion. Ensuite, l'utilisateur entre directement sur Chat (dernière session) et navigue librement entre les écrans via la barre du haut et le menu utilisateur.
@@ -85,7 +85,7 @@ Timeline en langage clair d'une session passée ("plan reçu", "tâche échouée
 Détail brut d'un événement de la timeline : message envoyé au modèle, sa réponse, le contexte d'exécution.
 
 ### 401 — Jeton expiré
-Pop-in bloquante : nouveau jeton demandé, dernier appel en attente rejoué automatiquement, la conversation continue exactement où elle en était.
+Quand le modèle refuse un appel en 401, la session est **mise en pause** côté backend : rien n'est perdu — conversation, cycle, message en attente et plans restent tels quels. Chat l'affiche en bandeau (quelle opération a été refusée, avec quel code, depuis quand), la pastille de phase dit « Paused », et une pop-in demande les identifiants que le modèle déclare. C'est le **bouton d'envoi** qui la rouvre si elle a été fermée : envoyer, ici, veut dire reprendre. La conversation continue exactement où elle en était. Un jeton encore invalide remet simplement en pause — un nouvel essai, pas une panne.
 
 ### — State machine reference (menu utilisateur)
 Écran de documentation vivante, sans action mutante. Montre les quatre machines à états réelles du backend (conversation — 11 états —, plan, tâche, fenêtre de contexte) avec leurs transitions exactes, et un panneau fixe donnant le cycle courant (`cycle_id`, `cycle_type`, statut) et le budget de session (`max_cycles`, `max_plans`, `max_total_duration_ms`) avec sa consommation. Construit à partir de la spec backend (`spec-v1.1.md` §5.1–5.4, §4.1) — pas une simplification inventée.

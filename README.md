@@ -23,7 +23,7 @@ Identité : **configurable par l'utilisateur final**, pas fixée dans le code. L
 
 ## Application (implémentation)
 
-Le code de l'application (React + TypeScript + Vite + Tauri) vit dans ce dépôt : `src/`, `src-tauri/`, `index.html`, etc. Elle tourne pour l'instant contre un `MockApiClient` (backend simulé en mémoire), donc testable seule, sans backend réel.
+Le code de l'application (React + TypeScript + Vite + Tauri) vit dans ce dépôt : `src/`, `src-tauri/`, `index.html`, etc. Elle tourne par défaut contre un `MockApiClient` (backend simulé en mémoire), donc testable seule, sans backend réel — et contre le vrai backend dès que `VITE_API_BASE_URL` est renseignée (voir [Brancher le front sur le vrai backend](#brancher-le-front-sur-le-vrai-backend)). Aucun écran ne change entre les deux : ils ne parlent qu'à l'interface `ApiClient`.
 
 ### Prérequis
 
@@ -52,3 +52,69 @@ Pour arrêter : fermer la fenêtre de l'application (ou du serveur dev), ou Ctrl
 `start-local.bat` est spécifique à Windows. Sur macOS/Linux, à la racine du dépôt : `npm install` puis `npm run tauri dev` (nécessite Rust/Cargo, voir Prérequis) — ou `npm run dev` pour le mode navigateur seul.
 
 Packaging en exécutable installable (`tauri build`, un vrai `.exe`/`.msi` à distribuer) : pas encore fait — pour l'instant seul le mode développement (`tauri dev`) est câblé, à voir une fois le front validé.
+
+### Brancher le front sur le vrai backend
+
+Une seule variable décide de l'implémentation d'`ApiClient` que l'application utilise (`src/api/context.tsx`) :
+
+| `VITE_API_BASE_URL` | Client utilisé |
+|---|---|
+| absente ou vide | `MockApiClient` — maquette en mémoire, aucun serveur nécessaire |
+| une URL | `HttpApiClient` (`src/api/http.ts`) — l'API locale d'`agentic-local-app` à cette adresse |
+
+Vite ne lit que les variables préfixées `VITE_`. Elle peut être passée sur la ligne de commande, ou écrite dans un fichier `.env.local` à la racine — **jamais committé**, `.gitignore` couvre déjà `.env*`.
+
+**La maquette en mémoire imite deux règles du vrai backend**, pour que les écrans restent démontrables sans serveur :
+
+| Règle | Comment la déclencher dans la maquette |
+|---|---|
+| un modèle par processus (les autres cartes sont désactivées) | `?model=<id>` sur l'URL de chargement choisit le profil servi (`local-fake` par défaut, puis `generic-http`, `templated-acme`) ; en changer demande de recharger la page, comme un redémarrage demanderait de relancer l'application |
+| un 401 met la session en pause | se connecter avec `expired` comme jeton d'accès : le premier message met la session en pause, le bandeau et la pop-in s'affichent, et n'importe quelle autre valeur la fait repartir |
+
+**Terminal 1 — le modèle** (le transport livré pointe sur `127.0.0.1:9000`) :
+
+```bash
+uv run agentic-app mock-server --host 127.0.0.1 --port 9000
+```
+
+**Terminal 2 — l'API locale**, depuis le dépôt `agentic-local-app` :
+
+```bash
+uv run agentic-app serve            # http://127.0.0.1:8765/api/v1 par défaut
+```
+
+**Terminal 3 — le front**, depuis ce dépôt :
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8765/api/v1 npm run dev
+```
+
+Sous Windows (PowerShell) : `$env:VITE_API_BASE_URL="http://127.0.0.1:8765/api/v1"; npm run dev`.
+
+**Rien à régler côté backend pour l'origine** — le serveur de développement Vite est épinglé sur le port de `vite.config.ts` (1420 aujourd'hui, `strictPort`), et `http://localhost:1420` **comme** `http://127.0.0.1:1420` sont désormais dans les `cors_origins` livrés par défaut (les deux orthographes de la boucle locale ne sont pas la même origine pour un navigateur). La fenêtre Tauri (`tauri://localhost`) est autorisée elle aussi. Un `config.toml` plus ancien, ou un port changé, redemande évidemment d'ajouter l'origine à la main.
+
+Ce que le client fait au moment de la connexion, dans cet ordre : `GET /models` (refus immédiat si le modèle choisi n'est pas le profil actif — un modèle par processus ; le sélecteur affiche d'ailleurs les autres profils désactivés), `POST /credentials` avec la carte `credentials` du formulaire (appel **sauté** si elle est vide), puis `POST /sessions` avec `user_id`, `working_space`, `skills` et `effort`, et enfin `GET /sessions/{id}/snapshot`. Aucune valeur d'identifiant n'est journalisée, conservée sur le client, ni reprise dans un message d'erreur.
+
+**Aucun message d'ouverture n'est fabriqué.** `POST /sessions` ne porte ni `goal` ni `user_message` : la session naît `READY`, rien n'est posté au modèle, aucun cycle ni plan du budget n'est consommé, et la trace d'audit ne contient pas de tour utilisateur inventé. C'est le premier message réellement tapé dans Chat qui ouvre le premier cycle et devient le `goal` de la session.
+
+**Si le modèle répond 401**, le backend met la session en pause au lieu de la faire échouer : Chat affiche un bandeau qui dit quelle opération a été refusée, avec quel code et depuis quand, et la pop-in d'identifiants s'ouvre avec les champs que le modèle déclare. Le bouton d'envoi devient le geste de reprise — il poste `POST /credentials` puis `POST /sessions/{id}/resume`, et la conversation repart où elle s'était arrêtée. Le bouton Stop reste disponible. Un jeton encore invalide remet simplement en pause.
+
+### Scripts de vérification (`smoke*.mjs`)
+
+Des scripts Node autonomes, un par sujet, une ligne par vérification, code de sortie non nul dès qu'une tombe.
+
+| Script | Ce qu'il vérifie | Ce dont il a besoin |
+|---|---|---|
+| `smoke.mjs`, `smoke-guide.mjs`, `smoke-prompts.mjs`, `smoke-persist*.mjs` | les écrans, pilotés dans un vrai navigateur (Playwright) | `npm run dev` en marche |
+| `smoke-http.mjs` | le client HTTP réel (`src/api/http.ts`) contre un backend qui tourne | l'API locale d'`agentic-local-app` en marche |
+
+```bash
+node smoke-http.mjs                                   # http://127.0.0.1:8765/api/v1
+node smoke-http.mjs http://127.0.0.1:9100/api/v1      # si l'API écoute ailleurs
+```
+
+Il ne démarre rien et n'ouvre aucun navigateur : il importe `src/api/http.ts` directement (Node ≥ 22.18 retire les types tout seul) et appelle le client comme le feraient les écrans. Ce qu'il parcourt : identité, catalogue de modèles (dont le drapeau `active`) et absence de secret dans sa charge, les deux refus de `POST /credentials`, le refus d'un modèle non actif, la connexion avec et sans identifiants (dont l'ordre réel des appels), **une session ouverte sans message d'ouverture** (aucun `user_request`, aucun cycle consommé, timeline réduite à `session.created`), **l'accord de `user_id`** entre `GET /whoami`, le corps de `POST /sessions` et la ligne d'historique, le premier message qui ouvre le premier cycle, les états de session rendus par l'historique, `409 SESSION_BUSY`, le flux SSE et le désabonnement, l'interruption, la conversation, les trois vues d'administration, le garde-fou du vidage de base, **le parcours complet pause → identifiants → reprise** et l'annulation par `AbortSignal`.
+
+Le parcours de pause a besoin d'un modèle qui réponde vraiment 401. Démarrer le modèle simulé avec un scénario portant `"token": "smoke-http-sentinel-value-do-not-print"` (la sentinelle que le script poste) et laisser la variable de jeton du serveur vide : le script provoque alors un vrai `RUNNING → PAUSED`, lit `GET /sessions/{id}/pause`, vérifie qu'une reprise avec un jeton toujours mauvais remet en pause, puis reprend pour de bon. Sans un tel modèle, ces vérifications sont **sautées** et le disent.
+
+**Il n'affiche jamais de valeur d'identifiant** : la seule qu'il envoie est une sentinelle locale, et sa dernière vérification relit toute sa propre sortie pour confirmer qu'elle n'y apparaît pas. Il n'appelle `POST /admin/reset-database` que pour vérifier que le garde-fou refuse (`api.allow_destructive_admin = false`) ; si le réglage est ouvert, la vérification est sautée et le dit, sans rien effacer.

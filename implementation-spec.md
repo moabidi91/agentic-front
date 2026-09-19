@@ -32,7 +32,7 @@ Référence visuelle : le canvas de maquettes (voir [frontend-plan.md](frontend-
 | `Debug.dc.html` | `DebugScreen` | État live : conversation / plan (liste ou diagramme) / tâches / flux protocolaire |
 | `History.dc.html` | `HistoryScreen` | Timeline lisible des événements d'une session |
 | `EventDetail.dc.html` | `EventDetailDrawer` | Détail d'un événement (message in / message out) |
-| `Modal401.dc.html` | `TokenExpiredModal` | Ressaisie de jeton sur 401, reprise automatique |
+| `Modal401.dc.html` | `TokenExpiredModal` | Ressaisie des identifiants d'une session mise en pause sur 401, puis reprise |
 | `StateMachine.dc.html` | `StateMachineScreen` | Référence des machines à états réelles (conversation/plan/tâche/fenêtre de contexte) + info de cycle et budget de session courants |
 | `LiveDatabase.dc.html` | `LiveDatabaseScreen` | Inspection en lecture seule de la base locale (sessions/events/audit) + action de vidage |
 
@@ -75,7 +75,7 @@ Ce dont le front a besoin, fonctionnellement — voir [contrat-interface.md](con
 - **Historique / audit** : lecture des événements d'une session passée, pour `HistoryScreen` et `EventDetailDrawer` — un événement doit inclure au minimum : type, horodatage, message in (s'il y en a un), message out (s'il y en a un), et le lien vers l'entrée d'audit correspondante (hash-chaînée).
 - **Inspection live de la base (nouveau)** : `LiveDatabaseScreen` a besoin de trois lectures — liste des sessions (id, état, dates, `user_id`), liste des events (id, session_id, type, horodatage, payload), et le journal d'audit (id, event_type, `prev_hash`, `hash`, horodatage) avec de quoi vérifier la chaîne. **[besoin backend]** — soit des endpoints de lecture dédiés (`GET /admin/sessions`, `/admin/events`, `/admin/audit`), soit un accès direct au fichier sqlite documenté (chemin, schéma) si le front peut se permettre une lecture directe en local (à trancher selon si l'app doit rester utilisable même serveur backend éteint).
 - **Vidage de la base (nouveau)** : action destructive demandée en maquette (`Clear database`, avec confirmation qui prévient explicitement que ça inclut les sessions en cours). **[besoin backend]** — proposition : un endpoint volontairement séparé du reste de l'API normale (ex. `POST /admin/reset-database`), gardé derrière une confirmation front obligatoire, qui référence explicitement que c'est une opération de dev/démo (à ne probablement pas exposer telle quelle en usage "production" local sans reconfirmation supplémentaire — à discuter avec l'équipe backend sur le niveau de garde-fou voulu).
-- **Reprise sur 401** : le front doit pouvoir rejouer le dernier appel en attente une fois un nouveau jeton fourni (`TokenExpiredModal`), sans perdre le fil de la conversation — cohérent avec le contrat de transport existant (ADR-004).
+- **Reprise sur 401** : **livré autrement, et mieux** (ADR-025). Ce n'est pas le front qui rejoue : quand le modèle répond 401, le backend met la session en pause (`PAUSED`) en gardant conversation, cycle, message en attente et plans. Le front le voit dans l'instantané, lit `GET /sessions/{sid}/pause` pour la raison, affiche un bandeau non bloquant, et reprend par `POST /credentials` puis `POST /sessions/{sid}/resume` (`TokenExpiredModal`, champs pilotés par les `credentialFields` du modèle). L'API locale n'est pas authentifiée et ne renvoie jamais 401 elle-même.
 - **`working_space`** : pas de contrat backend connu à ce jour pour un dossier de travail temporaire injecté dans le message utilisateur — à rapprocher du chantier ADR-024 (scratch dir / `AGENTIC_SCRATCH_DIR`) qui est encore à écrire côté backend. **[besoin backend]**, ne pas coder cette partie front tant que le contrat n'est pas fixé de part et d'autre.
 - **Branding (nom/icône)** : aucun besoin backend pour la v1 — c'est un choix purement local à l'installation front. Optionnel, pour plus tard : si on veut que ce choix survive à une réinstallation ou se synchronise entre plusieurs postes du même utilisateur, il faudrait un petit endpoint de préférence utilisateur côté backend (`GET/PUT /me/preferences` ou équivalent) — **pas demandé pour la v1**, à ne considérer que si le besoin se confirme.
 
@@ -126,7 +126,7 @@ Ce dont le front a besoin, fonctionnellement — voir [contrat-interface.md](con
 
 ## 8. Gestion des erreurs
 
-- **401** en cours de session → `TokenExpiredModal`, ressaisie, rejeu automatique de l'appel en attente, pas de perte de contexte.
+- **401** en cours de session → la session passe `PAUSED` côté backend : bandeau dans Chat, `TokenExpiredModal` avec les champs déclarés par le modèle, et le **bouton d'envoi** comme geste de reprise (`POST /credentials` puis `POST /resume`). Pas de perte de contexte ; un jeton encore mauvais remet en pause, ce qui est un nouvel essai, pas une panne.
 - **Perte de connexion au serveur local** (le process backend n'écoute plus) → à définir : bannière persistante + tentative de reconnexion, plutôt qu'un écran bloquant (l'app doit rester utilisable pour consulter l'historique déjà chargé en local, si c'est réalisable).
 - **Erreur de protocole côté modèle** (ADR-023, en cours de spec côté backend) → à représenter dans la vue Debug une fois le contrat backend stabilisé ; hors périmètre v1 tant qu'ADR-023 n'est pas écrit.
 
