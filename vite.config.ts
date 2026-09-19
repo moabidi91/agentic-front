@@ -11,5 +11,13 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    watch: {
+      // Vite's dev server otherwise watches the whole project, including
+      // src-tauri/target — Cargo's build output. On Windows those files get
+      // locked/rewritten mid-compile, which crashes Vite's watcher with
+      // "EBUSY: resource busy or locked" on a build script .exe. Excluding
+      // src-tauri entirely (recommended by Tauri's own Vite template) fixes it.
+      ignored: ['**/src-tauri/**'],
+    },
   },
 })
