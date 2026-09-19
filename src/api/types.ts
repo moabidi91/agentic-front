@@ -64,7 +64,35 @@ export interface ModelOption {
   name: string;
   provider: string;
   codec: string;
+  /**
+   * Kept for backward compatibility with a backend that hasn't adopted
+   * `credentialFields` yet — true is treated as a single implicit, secret
+   * "Access token" field (see api/credentials.ts). Prefer `credentialFields`
+   * for anything with more than one field, or a non-secret one.
+   */
   requiresCredentials: boolean;
+  /** Fields this model needs at sign-in, beyond the user id — absent/empty means none. */
+  credentialFields?: CredentialField[];
+}
+
+/**
+ * One field a model needs at sign-in — the access token, but also anything
+ * else a specific provider requires (a chat/thread id, an org slug, …).
+ * Declared per model (ModelOption.credentialFields) so the front never
+ * guesses or hardcodes a provider's shape — see contrat-interface.md §2.
+ */
+export interface CredentialField {
+  /** Used as the key in SignInConfig.credentials, and (if non-secret) in the saved sign-in prefs file. */
+  key: string;
+  label: string;
+  placeholder?: string;
+  /**
+   * Whether this value is sensitive. Defaults to true (secret) when omitted
+   * — fail closed. Only a field explicitly marked `secret: false` is ever
+   * written to the local sign-in prefs file (session/signInPrefs.ts); an
+   * access token stays secret and is never persisted regardless.
+   */
+  secret?: boolean;
 }
 
 export interface SkillRef {
@@ -91,7 +119,8 @@ export interface WhoAmI {
 export interface SignInConfig {
   userId: string;
   modelId: string;
-  accessToken?: string;
+  /** Keyed by CredentialField.key (e.g. "access_token", "chat_id") — replaces a single accessToken field. */
+  credentials?: Record<string, string>;
   workingSpace?: string;
   skills: SkillRef[];
   effort: EffortLevel;

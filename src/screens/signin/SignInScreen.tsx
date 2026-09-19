@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBranding } from '../../branding/BrandingProvider';
 import { BrandIcon } from '../../branding/icons';
+import { hasAllRequiredCredentials } from '../../api/credentials';
 import type { EffortLevel, ModelOption, PromptRef, SkillRef } from '../../api/types';
 import { isTauri, loadSignInPrefs, readPromptsFromFolder } from '../../session/signInPrefs';
 import { StepIdentity } from './StepIdentity';
@@ -17,7 +18,9 @@ export function SignInScreen() {
 
   const [userId, setUserId] = useState('');
   const [model, setModel] = useState<ModelOption | null>(null);
-  const [accessToken, setAccessToken] = useState('');
+  /** Keyed by CredentialField.key — one entry per field the chosen model declares (see api/credentials.ts). */
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const setCredentialValue = (key: string, value: string) => setCredentials((prev) => ({ ...prev, [key]: value }));
   const [workingSpace, setWorkingSpace] = useState('');
   const [skills, setSkills] = useState<SkillRef[]>([]);
   const [prompts, setPrompts] = useState<PromptRef[]>([]);
@@ -30,6 +33,11 @@ export function SignInScreen() {
   // a credential-free model manually on a completely empty form.
   const [restoredFromPrefs, setRestoredFromPrefs] = useState(false);
   const autoRanRef = useRef(false);
+  // Frozen snapshot of exactly what came from the file, taken once at restore
+  // time — the auto-advance/auto-submit checks below read this, never the live
+  // `credentials` state, so typing into a still-visible field never itself
+  // triggers automation; only what was already saved can do that.
+  const restoredCredentialsRef = useRef<Record<string, string>>({});
 
   // Restore the last successful setup (model, working folder, skills, effort,
   // prompts folder), if any — see signInPrefs.ts. Runs once on mount; the
@@ -42,6 +50,13 @@ export function SignInScreen() {
       if (cancelled || !saved) return;
       setUserId(saved.userId);
       setPreferredModelId(saved.modelId);
+      // Only ever the non-secret fields (e.g. a Chat ID) — a secret one like the
+      // access token is never written to the file in the first place, so there's
+      // nothing to restore for it; the user re-enters it each launch.
+      if (saved.credentials) {
+        setCredentials(saved.credentials);
+        restoredCredentialsRef.current = saved.credentials;
+      }
       setWorkingSpace(saved.workingSpace ?? '');
       setSkills(saved.skills);
       setEffort(saved.effort);
@@ -74,7 +89,7 @@ export function SignInScreen() {
         config: {
           userId,
           modelId: model.id,
-          accessToken: model.requiresCredentials ? accessToken : undefined,
+          credentials,
           workingSpace: workingSpace || undefined,
           skills,
           effort,
@@ -83,18 +98,22 @@ export function SignInScreen() {
     });
   };
 
-  // Nothing left to redo for a restored, credential-free model — skip both steps
-  // once the restore has finished landing. A model that needs a token still
-  // stops on step 1 (prefilled, just missing the token) since it's never restored.
+  // Nothing left to redo once every field the model needs was already in the
+  // saved file — skip both steps once the restore has finished landing and the
+  // model has resolved. Checked against the frozen restore snapshot, never the
+  // live `credentials` state: typing to complete a missing (secret) field by
+  // hand must never itself trigger this — only what the file already had can.
+  // A field that was never restored (any secret one, e.g. the access token)
+  // still stops here, prefilled otherwise, just missing that one value.
   useEffect(() => {
-    if (autoRanRef.current || !restoredFromPrefs || !model || model.requiresCredentials) return;
+    if (autoRanRef.current || !restoredFromPrefs || !hasAllRequiredCredentials(model, restoredCredentialsRef.current)) return;
     autoRanRef.current = true;
     setStep('setup');
   }, [restoredFromPrefs, model]);
 
   useEffect(() => {
     if (step !== 'setup' || !autoRanRef.current || submitting) return;
-    if (!model || model.requiresCredentials) return;
+    if (!hasAllRequiredCredentials(model, restoredCredentialsRef.current)) return;
     submit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
@@ -131,8 +150,8 @@ export function SignInScreen() {
             setUserId={setUserId}
             model={model}
             setModel={setModel}
-            accessToken={accessToken}
-            setAccessToken={setAccessToken}
+            credentials={credentials}
+            setCredentialValue={setCredentialValue}
             onContinue={() => setStep('setup')}
             preferredModelId={preferredModelId}
           />

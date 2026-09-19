@@ -8,6 +8,13 @@ export interface SavedSignInPrefs {
   effort: EffortLevel;
   /** Tauri only — a real folder path we can silently re-read at launch (browsers never expose one, see StepSetup). */
   promptsFolderPath?: string;
+  /**
+   * Only the model's credential fields explicitly marked `secret: false` (e.g.
+   * a Chat ID) — filtered in SessionContext.signIn() before this is ever
+   * called. A secret field (the access token, or any field a model forgot to
+   * mark non-secret) never reaches here.
+   */
+  credentials?: Record<string, string>;
 }
 
 const STORAGE_KEY = 'agentic-front.signin-prefs.v1';

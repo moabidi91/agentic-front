@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApi } from '../../api/context';
+import { hasAllRequiredCredentials, resolveCredentialFields } from '../../api/credentials';
 import type { ModelOption } from '../../api/types';
 import { Badge } from '../../components/Badge';
 import { FieldHint, FieldLabel, TextInput } from '../../components/Field';
@@ -11,8 +12,8 @@ export function StepIdentity({
   setUserId,
   model,
   setModel,
-  accessToken,
-  setAccessToken,
+  credentials,
+  setCredentialValue,
   onContinue,
   preferredModelId,
 }: {
@@ -20,8 +21,9 @@ export function StepIdentity({
   setUserId: (v: string) => void;
   model: ModelOption | null;
   setModel: (m: ModelOption) => void;
-  accessToken: string;
-  setAccessToken: (v: string) => void;
+  /** Keyed by CredentialField.key — one entry per field the chosen model declares (see api/credentials.ts). */
+  credentials: Record<string, string>;
+  setCredentialValue: (key: string, value: string) => void;
   onContinue: () => void;
   /** Last successfully-used model id, restored from signInPrefs.ts — auto-selected once the model list loads. */
   preferredModelId?: string;
@@ -50,7 +52,8 @@ export function StepIdentity({
     if (match) setModel(match);
   }, [models, preferredModelId, model, setModel]);
 
-  const canContinue = userId.trim().length > 0 && model !== null && (!model.requiresCredentials || accessToken.trim().length > 0);
+  const canContinue = userId.trim().length > 0 && model !== null && hasAllRequiredCredentials(model, credentials);
+  const fields = model ? resolveCredentialFields(model) : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -116,17 +119,19 @@ export function StepIdentity({
       </div>
 
       {model &&
-        (model.requiresCredentials ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <FieldLabel htmlFor="token">Access token</FieldLabel>
-            <TextInput
-              id="token"
-              type="password"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              placeholder="Paste an access token"
-            />
-          </div>
+        (fields.length > 0 ? (
+          fields.map((field) => (
+            <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <FieldLabel htmlFor={`cred-${field.key}`}>{field.label}</FieldLabel>
+              <TextInput
+                id={`cred-${field.key}`}
+                type={field.secret === false ? 'text' : 'password'}
+                value={credentials[field.key] ?? ''}
+                onChange={(e) => setCredentialValue(field.key, e.target.value)}
+                placeholder={field.placeholder}
+              />
+            </div>
+          ))
         ) : (
           <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
             This model manages its own authentication.

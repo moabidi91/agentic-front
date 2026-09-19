@@ -1,7 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApi } from '../api/context';
+import { isSecretField, resolveCredentialFields } from '../api/credentials';
 import type { ChatMessage, EffortLevel, ModelOption, PromptRef, SessionSnapshot, SignInConfig, SkillRef } from '../api/types';
 import { saveSignInPrefs } from './signInPrefs';
+
+/** Keeps only the fields the model marked `secret: false` — an unknown key (not in the model's own field list) is dropped too, fail closed. */
+function nonSecretCredentials(model: ModelOption, credentials: Record<string, string> | undefined): Record<string, string> {
+  if (!credentials) return {};
+  const fields = resolveCredentialFields(model);
+  return Object.fromEntries(
+    Object.entries(credentials).filter(([key]) => {
+      const field = fields.find((f) => f.key === key);
+      return field !== undefined && !isSecretField(field);
+    }),
+  );
+}
 
 const FIRST_RUN_KEY = 'agentic-front.hasConnectedBefore.v1';
 
@@ -70,7 +83,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       unsubscribers.current.push(
         api.subscribeMessages(snap.conversationId, (m) => setMessages((prev) => [...prev, m])),
       );
-      // Remember this setup (never the token) so a returning launch doesn't redo it — see signInPrefs.ts.
+      // Remember this setup (never a secret field, e.g. the token) so a returning
+      // launch doesn't redo it — see signInPrefs.ts and api/credentials.ts.
       saveSignInPrefs({
         userId: config.userId,
         modelId: config.modelId,
@@ -78,6 +92,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         skills: config.skills,
         effort: config.effort,
         promptsFolderPath,
+        credentials: nonSecretCredentials(model, config.credentials),
       }).catch(() => {});
     },
     [api, teardown],

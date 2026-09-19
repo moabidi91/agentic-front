@@ -18,8 +18,23 @@ const now = () => new Date().toISOString();
 
 const MOCK_MODELS: ModelOption[] = [
   { id: 'local-fake', name: 'Local mock model', provider: 'fake', codec: 'json_text', requiresCredentials: false },
+  // No `credentialFields` here on purpose — exercises the backward-compat fallback
+  // (requiresCredentials: true ⇒ a single implicit, secret "Access token" field).
   { id: 'generic-http', name: 'Generic HTTP provider', provider: 'generic_http', codec: 'json_text', requiresCredentials: true },
-  { id: 'templated-acme', name: 'Acme templated endpoint', provider: 'templated_http', codec: 'tool_call', requiresCredentials: true },
+  // Demonstrates a model needing more than just a token — an access token (secret,
+  // never persisted) plus a Chat ID (not secret, gets remembered like the rest of
+  // the setup). See api/credentials.ts and contrat-interface.md §2.
+  {
+    id: 'templated-acme',
+    name: 'Acme templated endpoint',
+    provider: 'templated_http',
+    codec: 'tool_call',
+    requiresCredentials: true,
+    credentialFields: [
+      { key: 'access_token', label: 'Access token', placeholder: 'Paste an access token', secret: true },
+      { key: 'chat_id', label: 'Chat ID', placeholder: 'e.g. chat_8f3a21', secret: false },
+    ],
+  },
 ];
 
 const MOCK_SKILLS = ['release-checklist', 'db-migration-guide', 'incident-runbook', 'api-style-guide'];
@@ -91,7 +106,12 @@ export class MockApiClient implements ApiClient {
     this.sessions.set(conversationId, snapshot);
     this.messages.set(conversationId, []);
     this.events.set(conversationId, []);
-    this.logEvent(conversationId, 'session_created', `user_id=${config.userId} model=${config.modelId} effort=${config.effort}`);
+    const credentialKeys = Object.keys(config.credentials ?? {}).join(',') || 'none';
+    this.logEvent(
+      conversationId,
+      'session_created',
+      `user_id=${config.userId} model=${config.modelId} effort=${config.effort} credentials=${credentialKeys}`,
+    );
     return snapshot;
   }
 
