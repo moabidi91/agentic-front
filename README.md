@@ -18,3 +18,19 @@ Canvas Claude (Design Components), interactif, écrans liés entre eux : https:/
 Accès restreint au compte propriétaire — à partager depuis le menu Share de la page si besoin de le montrer à quelqu'un d'autre. Pas encore d'implémentation réelle : phase maquettes uniquement.
 
 Identité : **configurable par l'utilisateur final**, pas fixée dans le code. Le tout premier écran (`Welcome.dc.html`) lui fait choisir un nom principal, un petit label, et une icône parmi six propositions (dont une forme honeycomb, mais ce n'est qu'une option parmi d'autres, plus par défaut), avec un aperçu en direct de l'affichage. Ce choix (props `appName` / `appLabel`, valeurs par défaut `"Console"` / `"OPS"`) alimente ensuite toutes les autres maquettes — aucun nom de produit n'est codé en dur nulle part. Palette violet + teal (inspiration bancaire, jamais nommée dans aucun fichier), interface entièrement en anglais.
+
+## Application (implémentation)
+
+Le code de l'application (React + TypeScript + Vite + Tauri) vit dans ce dépôt : `src/`, `src-tauri/`, `index.html`, etc. Elle tourne pour l'instant contre un `MockApiClient` (backend simulé en mémoire), donc testable seule, sans backend réel.
+
+### Lancer en local (Windows)
+
+Double-clic sur **`start-local.bat`** à la racine du dépôt. Le script :
+1. vérifie que Node.js est installé ;
+2. installe les dépendances (`npm install`) au premier lancement seulement ;
+3. démarre le serveur de dev dans sa propre fenêtre ;
+4. ouvre le navigateur sur `http://localhost:5183/` une fois le serveur prêt.
+
+Pour arrêter : fermer la fenêtre "agentic-front - serveur dev" (ou Ctrl+C dedans).
+
+Packaging en exécutable installable (Tauri) : pas encore fait, à voir une fois le front validé.
