@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { Badge } from '../components/Badge';
+import { HAND_FONT, HandHeading, sketchStyle, StepNote } from '../components/sketch';
 import { useSession } from '../session/SessionContext';
 import {
   CONTEXT_ROTATION_SEQUENCE,
@@ -38,78 +38,6 @@ function toProse(path: string): string {
     .map((s) => s.trim())
     .filter(Boolean)
     .join(', then ');
-}
-
-// Small alternating tilt + irregular corner-radius set per card index, for the sketched feel.
-const TILTS = [-1.4, 1.1, -0.9, 1.5, -1.2, 0.8, -1.6, 1.3];
-const RADII = ['10px 15px 9px 16px', '15px 9px 16px 10px', '9px 16px 10px 14px', '16px 10px 14px 9px'];
-
-function sketchStyle(i: number): CSSProperties {
-  return {
-    transform: `rotate(${TILTS[i % TILTS.length]}deg)`,
-    borderRadius: RADII[i % RADII.length],
-  };
-}
-
-const HAND_FONT = "'Kalam', var(--font-sans)";
-
-function HandHeading({ children }: { children: string }) {
-  return (
-    <div
-      style={{
-        fontFamily: HAND_FONT,
-        fontSize: 16,
-        fontWeight: 700,
-        color: 'var(--text)',
-        marginBottom: 10,
-        transform: 'rotate(-0.6deg)',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** One numbered step in a sequence — a sticky-note-ish card, no connecting arrow. */
-function StepNote({ index, label, tone = 'neutral' }: { index: number; label: string; tone?: 'neutral' | 'info' | 'success' }) {
-  const map = {
-    neutral: { bg: 'var(--surface)', fg: 'var(--text)', border: 'var(--border)' },
-    info: { bg: 'var(--blue)22', fg: 'var(--blue)', border: 'var(--blue)' },
-    success: { bg: 'var(--green-soft)', fg: 'var(--green)', border: 'var(--green)' },
-  }[tone];
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 9,
-        padding: '8px 14px 8px 10px',
-        border: `1.6px dashed ${map.border}`,
-        background: map.bg,
-        ...sketchStyle(index),
-      }}
-    >
-      <span
-        style={{
-          width: 20,
-          height: 20,
-          flexShrink: 0,
-          borderRadius: '50%',
-          border: `1.4px solid ${map.fg}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: HAND_FONT,
-          fontSize: 12,
-          fontWeight: 700,
-          color: map.fg,
-        }}
-      >
-        {index + 1}
-      </span>
-      <span style={{ fontSize: 11.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: map.fg }}>{label}</span>
-    </div>
-  );
 }
 
 function StepSequence({ states, highlight }: { states: string[]; highlight?: (s: string, i: number) => 'neutral' | 'info' | 'success' }) {

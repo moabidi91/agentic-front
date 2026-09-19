@@ -1,39 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useBranding } from '../branding/BrandingProvider';
 import { BrandIcon } from '../branding/icons';
 import { useSession } from '../session/SessionContext';
 import { Spinner } from '../components/Spinner';
+import { GuideChat, GuideControl, GuideDebug, GuideHistory, GuideStates, GuideTheme } from './connecting/GuideIllustrations';
+import { HAND_FONT } from '../components/sketch';
 import type { ModelOption, PromptRef, SignInConfig } from '../api/types';
 
 type StepState = 'pending' | 'active' | 'done';
 
 const STEPS = ['Validating access token', 'Creating session', 'First call to the model'];
 
-const GUIDE_CARDS = [
+const GUIDE_CARDS: { title: string; body: string; Illustration: ComponentType }[] = [
   {
-    title: 'What this app is',
-    body: 'A local console that talks to your agentic-local-app backend — ask questions in Chat, or watch exactly what the model is doing in Debug.',
+    title: 'Chat naturally',
+    body: 'Send a request, get a plain-language answer back — every action underneath is logged automatically.',
+    Illustration: GuideChat,
   },
   {
-    title: 'Two views, one session',
-    body: 'Chat is the everyday view: ask, get an answer. Debug shows the full live state — conversation, plan, tasks, raw protocol — switching never loses your place.',
+    title: 'Switch to Debug anytime',
+    body: 'One toggle away: watch tasks, plans and the protocol log update live, in real time.',
+    Illustration: GuideDebug,
   },
   {
-    title: 'Why traceability matters',
-    body: 'Every action the model takes goes through a strict protocol, and every event is logged and hash-chained. Nothing runs invisibly.',
+    title: 'Full session history',
+    body: 'Every event stays on record — revisit any past session and drill into any step.',
+    Illustration: GuideHistory,
   },
   {
-    title: 'Conversation states, at a glance',
-    body: 'NEW → ACTIVE → RUNNING_PLAN → READY → COMPLETED is the nominal path — and any active state can drop into INTERRUPTED if you hit Stop.',
+    title: 'Light & dark, your call',
+    body: 'Switch themes from the top bar at any time — every screen has both declinations.',
+    Illustration: GuideTheme,
   },
   {
-    title: 'Control, built in',
-    body: 'Interrupt at any moment, a diagram view of the plan, a hash-chained audit log, and a name/icon you chose yourself.',
+    title: 'Know exactly what state it’s in',
+    body: 'Every session moves through a strict state machine — never a guess. Full reference any time from the account menu.',
+    Illustration: GuideStates,
   },
   {
-    title: 'The full reference',
-    body: 'This carousel is a simplified teaser. Open State machine reference from the user menu anytime for the exact, complete picture.',
+    title: 'Built for control, not just chat',
+    body: 'Stop or resume any run, watch the plan as a diagram, replay the audit trail, and make the app your own.',
+    Illustration: GuideControl,
   },
 ];
 
@@ -168,12 +176,12 @@ export function ConnectingScreen() {
                   className="af-card"
                   style={{
                     width: '100%',
-                    minHeight: 150,
-                    padding: '24px 28px',
+                    minHeight: 250,
+                    padding: '22px 28px',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
-                    gap: 10,
+                    gap: 6,
                     position: 'relative',
                   }}
                 >
@@ -184,8 +192,16 @@ export function ConnectingScreen() {
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M15 18l-6-6 6-6" /></svg>
                   </button>
+                  <div style={{ padding: '0 34px' }}>
+                    {(() => {
+                      const Illustration = GUIDE_CARDS[cardIndex].Illustration;
+                      return <Illustration />;
+                    })()}
+                  </div>
                   <div style={{ textAlign: 'center', padding: '0 30px' }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>{GUIDE_CARDS[cardIndex].title}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6, fontFamily: HAND_FONT }}>
+                      {GUIDE_CARDS[cardIndex].title}
+                    </div>
                     <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55 }}>{GUIDE_CARDS[cardIndex].body}</div>
                   </div>
                   <button
