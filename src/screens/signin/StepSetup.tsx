@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
 import { useApi } from '../../api/context';
-import type { EffortLevel, SkillRef } from '../../api/types';
+import type { EffortLevel, PromptRef, SkillRef } from '../../api/types';
 import { Chip } from '../../components/Chip';
 import { FieldHint, FieldLabel } from '../../components/Field';
+import { SelectableList } from '../../components/SelectableList';
 import { useAppSettings, type SessionEndBehavior } from '../../session/useAppSettings';
+
+/** Above this many selections, a chip row stops being scannable — switch to a checkable list with a filter. */
+const REVIEW_LIST_THRESHOLD = 6;
 
 const EFFORT_OPTIONS: { id: EffortLevel; label: string }[] = [
   { id: 'low', label: 'Low' },
@@ -39,6 +43,8 @@ export function StepSetup({
   setWorkingSpace,
   skills,
   setSkills,
+  prompts,
+  setPrompts,
   effort,
   setEffort,
   onBack,
@@ -49,6 +55,8 @@ export function StepSetup({
   setWorkingSpace: (v: string) => void;
   skills: SkillRef[];
   setSkills: Dispatch<SetStateAction<SkillRef[]>>;
+  prompts: PromptRef[];
+  setPrompts: Dispatch<SetStateAction<PromptRef[]>>;
   effort: EffortLevel;
   setEffort: (v: EffortLevel) => void;
   onBack: () => void;
@@ -60,9 +68,11 @@ export function StepSetup({
   const [knownSkills, setKnownSkills] = useState<string[]>([]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pathIsApproximate, setPathIsApproximate] = useState(false);
+  const [promptsError, setPromptsError] = useState<string | null>(null);
 
   const folderInputRef = useRef<HTMLInputElement>(null);
   const skillsInputRef = useRef<HTMLInputElement>(null);
+  const promptsFolderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.listKnownSkills().then(setKnownSkills);
@@ -132,6 +142,56 @@ export function StepSetup({
     e.target.value = '';
   };
 
+  const addPrompts = (loaded: PromptRef[]) => {
+    setPrompts((prev) => {
+      const seen = new Set(prev.map((p) => p.name));
+      const next = [...prev];
+      for (const p of loaded) {
+        if (!p.name || seen.has(p.name)) continue;
+        seen.add(p.name);
+        next.push(p);
+      }
+      return next;
+    });
+  };
+
+  const pickPromptsFolder = async () => {
+    setPromptsError(null);
+    if (isTauri) {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const dir = await open({ directory: true });
+        if (typeof dir !== 'string') return;
+        const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
+        const entries = await readDir(dir);
+        const mdEntries = entries.filter((e) => !e.isDirectory && e.name?.toLowerCase().endsWith('.md'));
+        const loaded: PromptRef[] = [];
+        for (const entry of mdEntries) {
+          const content = await readTextFile(`${dir}/${entry.name}`);
+          loaded.push({ name: stripMdExtension(entry.name!), content });
+        }
+        addPrompts(loaded);
+      } catch (err) {
+        setPromptsError(err instanceof Error ? err.message : 'Could not read that folder.');
+      }
+      return;
+    }
+    // Browser fallback — a real folder picker (webkitdirectory), .md files filtered
+    // and their real text content read via the File API, same as the Tauri path.
+    promptsFolderInputRef.current?.click();
+  };
+
+  const onPromptsFolderInputChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const mdFiles = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.md'));
+      const loaded = await Promise.all(mdFiles.map(async (f) => ({ name: stripMdExtension(f.name), content: await f.text() })));
+      addPrompts(loaded);
+      if (mdFiles.length === 0) setPromptsError('That folder has no .md files.');
+    }
+    e.target.value = '';
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -190,6 +250,7 @@ export function StepSetup({
           multiple
           onChange={onFolderInputChange}
           style={{ display: 'none' }}
+          data-testid="folder-input"
           {...({ webkitdirectory: 'true', directory: 'true' } as unknown as Record<string, string>)}
         />
         <FieldHint>
@@ -205,11 +266,21 @@ export function StepSetup({
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <FieldLabel>Skills</FieldLabel>
+        <FieldLabel>Skills{skills.length > 0 ? ` (${skills.length} selected)` : ''}</FieldLabel>
+
+        {skills.length > REVIEW_LIST_THRESHOLD && (
+          <SelectableList
+            items={skills.map((s) => ({ id: s.name, label: s.name }))}
+            onRemove={(id) => setSkills(skills.filter((x) => x.name !== id))}
+            searchPlaceholder="Filter selected skills…"
+          />
+        )}
+
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {skills.map((s) => (
-            <Chip key={s.name} label={s.name} onRemove={() => setSkills(skills.filter((x) => x.name !== s.name))} />
-          ))}
+          {skills.length <= REVIEW_LIST_THRESHOLD &&
+            skills.map((s) => (
+              <Chip key={s.name} label={s.name} onRemove={() => setSkills(skills.filter((x) => x.name !== s.name))} />
+            ))}
           <button
             type="button"
             onClick={pickSkillFiles}
@@ -238,10 +309,54 @@ export function StepSetup({
           multiple
           onChange={onSkillsInputChange}
           style={{ display: 'none' }}
+          data-testid="skills-input"
         />
         <FieldHint>
           Optional — {isTauri ? '.md files' : '.md files from your browser'} made available to the model for this session. The
           suggestions below are known skills you can add with one click.
+        </FieldHint>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <FieldLabel>Prompts{prompts.length > 0 ? ` (${prompts.length} selected)` : ''}</FieldLabel>
+
+        {prompts.length > REVIEW_LIST_THRESHOLD && (
+          <SelectableList
+            items={prompts.map((p) => ({ id: p.name, label: p.name }))}
+            onRemove={(id) => setPrompts(prompts.filter((x) => x.name !== id))}
+            searchPlaceholder="Filter selected prompts…"
+          />
+        )}
+
+        {prompts.length > 0 && prompts.length <= REVIEW_LIST_THRESHOLD && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {prompts.map((p) => (
+              <Chip key={p.name} label={p.name} onRemove={() => setPrompts(prompts.filter((x) => x.name !== p.name))} />
+            ))}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={pickPromptsFolder}
+          className="af-btn af-btn--secondary af-btn--sm"
+          style={{ alignSelf: 'flex-start' }}
+        >
+          Browse prompts folder…
+        </button>
+        <input
+          ref={promptsFolderInputRef}
+          type="file"
+          multiple
+          onChange={onPromptsFolderInputChange}
+          style={{ display: 'none' }}
+          data-testid="prompts-input"
+          {...({ webkitdirectory: 'true', directory: 'true' } as unknown as Record<string, string>)}
+        />
+        {promptsError && <FieldHint>{promptsError}</FieldHint>}
+        <FieldHint>
+          Optional — pick a folder of .md files and their content becomes available as quick templates: type "/" in Chat to
+          insert one.
         </FieldHint>
       </div>
 

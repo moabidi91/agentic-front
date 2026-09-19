@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBranding } from '../../branding/BrandingProvider';
 import { BrandIcon } from '../../branding/icons';
-import type { EffortLevel, ModelOption, SkillRef } from '../../api/types';
+import type { EffortLevel, ModelOption, PromptRef, SkillRef } from '../../api/types';
 import { StepIdentity } from './StepIdentity';
 import { StepSetup } from './StepSetup';
 
@@ -19,6 +19,7 @@ export function SignInScreen() {
   const [accessToken, setAccessToken] = useState('');
   const [workingSpace, setWorkingSpace] = useState('');
   const [skills, setSkills] = useState<SkillRef[]>([]);
+  const [prompts, setPrompts] = useState<PromptRef[]>([]);
   const [effort, setEffort] = useState<EffortLevel>('medium');
 
   const submit = () => {
@@ -27,6 +28,7 @@ export function SignInScreen() {
     navigate('/connecting', {
       state: {
         model,
+        prompts,
         config: {
           userId,
           modelId: model.id,
@@ -81,6 +83,8 @@ export function SignInScreen() {
             setWorkingSpace={setWorkingSpace}
             skills={skills}
             setSkills={setSkills}
+            prompts={prompts}
+            setPrompts={setPrompts}
             effort={effort}
             setEffort={setEffort}
             onBack={() => setStep('identity')}

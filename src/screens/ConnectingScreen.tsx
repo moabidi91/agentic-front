@@ -4,7 +4,7 @@ import { useBranding } from '../branding/BrandingProvider';
 import { BrandIcon } from '../branding/icons';
 import { useSession } from '../session/SessionContext';
 import { Spinner } from '../components/Spinner';
-import type { ModelOption, SignInConfig } from '../api/types';
+import type { ModelOption, PromptRef, SignInConfig } from '../api/types';
 
 type StepState = 'pending' | 'active' | 'done';
 
@@ -47,7 +47,7 @@ export function ConnectingScreen() {
   const [failed, setFailed] = useState<string | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
 
-  const state = location.state as { config?: SignInConfig; model?: ModelOption } | null;
+  const state = location.state as { config?: SignInConfig; model?: ModelOption; prompts?: PromptRef[] } | null;
 
   useEffect(() => {
     if (!state?.config || !state?.model) {
@@ -67,7 +67,7 @@ export function ConnectingScreen() {
       await new Promise((r) => setTimeout(r, 350));
       if (cancelled) return;
       try {
-        await signIn(state.config!, state.model!);
+        await signIn(state.config!, state.model!, state.prompts ?? []);
         if (cancelled) return;
         setStepIndex(2);
         await new Promise((r) => setTimeout(r, 400));

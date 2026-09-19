@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApi } from '../api/context';
-import type { ChatMessage, EffortLevel, ModelOption, SessionSnapshot, SignInConfig, SkillRef } from '../api/types';
+import type { ChatMessage, EffortLevel, ModelOption, PromptRef, SessionSnapshot, SignInConfig, SkillRef } from '../api/types';
 
 const FIRST_RUN_KEY = 'agentic-front.hasConnectedBefore.v1';
 
@@ -10,6 +10,8 @@ interface ConnectionInfo {
   model: ModelOption;
   workingSpace?: string;
   skills: SkillRef[];
+  /** Front-only — loaded from a local folder at sign-in, never sent to the backend. Powers the "/" picker in Chat. */
+  prompts: PromptRef[];
   effort: EffortLevel;
 }
 
@@ -18,7 +20,7 @@ interface SessionContextValue {
   snapshot: SessionSnapshot | null;
   messages: ChatMessage[];
   isFirstRun: boolean;
-  signIn: (config: SignInConfig, model: ModelOption) => Promise<void>;
+  signIn: (config: SignInConfig, model: ModelOption, prompts?: PromptRef[]) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   interrupt: () => Promise<void>;
   markConnectedOnce: () => void;
@@ -49,7 +51,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => teardown, [teardown]);
 
   const signIn = useCallback(
-    async (config: SignInConfig, model: ModelOption) => {
+    async (config: SignInConfig, model: ModelOption, prompts: PromptRef[] = []) => {
       const snap = await api.signIn(config);
       teardown();
       setSnapshot(snap);
@@ -60,6 +62,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         model,
         workingSpace: config.workingSpace,
         skills: config.skills,
+        prompts,
         effort: config.effort,
       });
       unsubscribers.current.push(api.subscribeSession(snap.conversationId, setSnapshot));

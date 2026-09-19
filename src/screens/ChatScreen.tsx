@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SessionShell } from '../components/SessionShell';
 import { Button } from '../components/Button';
+import { SlashCommandMenu } from '../components/SlashCommandMenu';
 import { useSession } from '../session/SessionContext';
 import { useAppSettings } from '../session/useAppSettings';
 import type { ChatHeaderInfo } from '../components/AppShell';
-import type { ConversationStatus } from '../api/types';
+import type { ConversationStatus, PromptRef } from '../api/types';
+
+/** Matches "/" plus a still-being-typed command name — the palette stays open while this matches. */
+const SLASH_PATTERN = /^\/(\S*)$/;
 
 const PROCESSING: ConversationStatus[] = ['ACTIVE', 'WAITING_MODEL_RESPONSE', 'RUNNING_PLAN', 'ROTATING'];
 
@@ -37,11 +41,42 @@ export function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [endChoiceDismissed, setEndChoiceDismissed] = useState(false);
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const status = snapshot?.status ?? 'READY';
   const isProcessing = PROCESSING.includes(status);
   const isCompleted = status === 'COMPLETED';
+
+  const availablePrompts = useMemo(() => connection?.prompts ?? [], [connection]);
+  const slashMatch = SLASH_PATTERN.exec(draft);
+  const slashQuery = slashMatch ? slashMatch[1] : null;
+  const slashOpen = slashQuery !== null && availablePrompts.length > 0 && !slashDismissed;
+  const slashItems = useMemo(
+    () => (slashQuery === null ? [] : availablePrompts.filter((p) => p.name.toLowerCase().includes(slashQuery.toLowerCase()))),
+    [availablePrompts, slashQuery],
+  );
+
+  // Reset the highlighted row and any Escape-dismissal each time the typed filter changes.
+  useEffect(() => {
+    setSlashActiveIndex(0);
+    setSlashDismissed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slashQuery]);
+
+  const selectPrompt = (p: PromptRef) => {
+    setDraft(p.content);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    });
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -169,6 +204,7 @@ export function ChatScreen() {
         <div style={{ padding: '14px 24px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div
             style={{
+              position: 'relative',
               display: 'flex',
               alignItems: 'flex-end',
               gap: 10,
@@ -178,12 +214,38 @@ export function ChatScreen() {
               background: 'var(--surface-2)',
             }}
           >
+            {slashOpen && (
+              <SlashCommandMenu items={slashItems} activeIndex={slashActiveIndex} onHover={setSlashActiveIndex} onSelect={selectPrompt} />
+            )}
             <textarea
+              ref={textareaRef}
               rows={2}
               value={draft}
               placeholder={isProcessing ? 'Send another message — it will queue for the next cycle…' : 'Ask something…'}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
+                if (slashOpen) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSlashActiveIndex((i) => Math.min(i + 1, Math.max(slashItems.length - 1, 0)));
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSlashActiveIndex((i) => Math.max(i - 1, 0));
+                    return;
+                  }
+                  if ((e.key === 'Enter' || e.key === 'Tab') && slashItems[slashActiveIndex]) {
+                    e.preventDefault();
+                    selectPrompt(slashItems[slashActiveIndex]);
+                    return;
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setSlashDismissed(true);
+                    return;
+                  }
+                }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   submit();
@@ -251,6 +313,11 @@ export function ChatScreen() {
           {isProcessing && (
             <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
               A message sent now is queued — applied once the current cycle finishes, unless you interrupt.
+            </span>
+          )}
+          {!isProcessing && !draft && availablePrompts.length > 0 && (
+            <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
+              Type <span style={{ fontFamily: 'var(--font-mono)' }}>/</span> to insert one of your {availablePrompts.length} saved prompts.
             </span>
           )}
         </div>

@@ -72,6 +72,18 @@ export interface SkillRef {
   path: string;
 }
 
+/**
+ * A locally-loaded prompt template — name plus its full .md content, read
+ * client-side from a folder the user picks at sign-in. Powers the "/" picker
+ * in Chat (insert a saved prompt into the composer). Front-only: unlike
+ * SkillRef this is never sent to the backend, so it isn't part of
+ * SignInConfig below.
+ */
+export interface PromptRef {
+  name: string;
+  content: string;
+}
+
 export interface WhoAmI {
   userId: string;
 }
