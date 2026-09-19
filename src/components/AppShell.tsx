@@ -11,7 +11,8 @@ export interface ChatHeaderInfo {
   userLine: string;
   workingSpace?: string;
   phaseLabel: string;
-  phaseKind: 'processing' | 'interrupted' | 'idle';
+  /** `paused` is the 401 pause of ADR-025: not working, not idle — waiting on the user. */
+  phaseKind: 'processing' | 'interrupted' | 'paused' | 'idle';
   onPhaseClick?: () => void;
   onReset?: () => void;
 }
@@ -96,6 +97,7 @@ function FolderPill({ path }: { path?: string }) {
 const PHASE_TONE: Record<ChatHeaderInfo['phaseKind'], { bg: string; fg: string; pulse: boolean }> = {
   processing: { bg: 'var(--amber-soft)', fg: 'var(--amber)', pulse: true },
   interrupted: { bg: 'var(--surface-2)', fg: 'var(--text-2)', pulse: false },
+  paused: { bg: 'var(--amber-soft)', fg: 'var(--amber)', pulse: false },
   idle: { bg: 'var(--green-soft)', fg: 'var(--green)', pulse: false },
 };
 

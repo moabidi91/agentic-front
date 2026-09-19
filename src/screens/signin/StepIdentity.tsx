@@ -46,10 +46,12 @@ export function StepIdentity({
 
   // Separate from the effect above so it re-checks regardless of which of the two
   // (model list vs. restored prefs) finishes loading first — no ordering assumption.
+  // A saved model this process no longer serves is not restored: it would only be a card the
+  // user cannot use, with the Continue button stuck (ADR-024 §2).
   useEffect(() => {
     if (!models || !preferredModelId || model) return;
     const match = models.find((m) => m.id === preferredModelId);
-    if (match) setModel(match);
+    if (match && match.active !== false) setModel(match);
   }, [models, preferredModelId, model, setModel]);
 
   const canContinue = userId.trim().length > 0 && model !== null && hasAllRequiredCredentials(model, credentials);
@@ -85,10 +87,16 @@ export function StepIdentity({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {models.map((m) => {
               const selected = model?.id === m.id;
+              // One model per process (ADR-024 §2): only the active profile can open a session,
+              // and signing in with another is refused before any request. The card says so here
+              // rather than letting the user find out at the last click.
+              const unavailable = m.active === false;
               return (
                 <button
                   key={m.id}
                   onClick={() => setModel(m)}
+                  disabled={unavailable}
+                  aria-disabled={unavailable}
                   className="af-card"
                   style={{
                     textAlign: 'left',
@@ -96,8 +104,11 @@ export function StepIdentity({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    gap: 12,
                     borderColor: selected ? 'var(--navy)' : 'var(--border)',
                     background: selected ? 'var(--surface-2)' : 'var(--surface)',
+                    opacity: unavailable ? 0.55 : 1,
+                    cursor: unavailable ? 'not-allowed' : 'pointer',
                   }}
                 >
                   <div>
@@ -105,8 +116,16 @@ export function StepIdentity({
                     <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
                       {m.provider} · {m.codec}
                     </div>
+                    {unavailable && (
+                      <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.45 }}>
+                        One model per process: this machine serves the profile at the top. Using this one means
+                        restarting the application.
+                      </div>
+                    )}
                   </div>
-                  {m.requiresCredentials ? (
+                  {unavailable ? (
+                    <Badge bg="var(--surface-2)" color="var(--text-3)">Not served here</Badge>
+                  ) : m.requiresCredentials ? (
                     <Badge bg="var(--amber-soft)" color="var(--amber)">Token required</Badge>
                   ) : (
                     <Badge bg="var(--green-soft)" color="var(--green)">No credentials</Badge>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { SessionShell } from '../components/SessionShell';
 import { Button } from '../components/Button';
 import { SlashCommandMenu } from '../components/SlashCommandMenu';
+import { pauseSentence } from '../session/pauseText';
 import { useSession } from '../session/SessionContext';
 import { useAppSettings } from '../session/useAppSettings';
 import type { ChatHeaderInfo } from '../components/AppShell';
@@ -11,6 +12,11 @@ import type { ConversationStatus, PromptRef } from '../api/types';
 /** Matches "/" plus a still-being-typed command name — the palette stays open while this matches. */
 const SLASH_PATTERN = /^\/(\S*)$/;
 
+/**
+ * The states in which the loop owns the session: the send button is blocked and Stop is live
+ * (§7.3 of the front/backend contract). `PAUSED` is deliberately not here — the loop has let go
+ * of it, and a paused session has its own rendering below.
+ */
 const PROCESSING: ConversationStatus[] = ['ACTIVE', 'WAITING_MODEL_RESPONSE', 'RUNNING_PLAN', 'ROTATING'];
 
 function phaseLabel(status: ConversationStatus): string {
@@ -25,6 +31,8 @@ function phaseLabel(status: ConversationStatus): string {
       return 'Rotating context';
     case 'INTERRUPTED':
       return 'Interrupted';
+    case 'PAUSED':
+      return 'Paused — credentials';
     case 'COMPLETED':
       return 'Completed';
     case 'FAILED':
@@ -36,7 +44,7 @@ function phaseLabel(status: ConversationStatus): string {
 
 export function ChatScreen() {
   const navigate = useNavigate();
-  const { snapshot, connection, messages, sendMessage, interrupt } = useSession();
+  const { snapshot, connection, messages, pause, sendMessage, interrupt, requestCredentials } = useSession();
   const { settings } = useAppSettings();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -48,6 +56,7 @@ export function ChatScreen() {
 
   const status = snapshot?.status ?? 'READY';
   const isProcessing = PROCESSING.includes(status);
+  const isPaused = status === 'PAUSED';
   const isCompleted = status === 'COMPLETED';
 
   const availablePrompts = useMemo(() => connection?.prompts ?? [], [connection]);
@@ -92,7 +101,17 @@ export function ChatScreen() {
     }
   }, [isCompleted, settings.sessionEndBehavior]);
 
+  /**
+   * The composer's one gesture. On a paused session it does not send: it re-opens the credential
+   * pop-in, which posts `POST /credentials` then `POST /sessions/{sid}/resume` and continues the
+   * session where it stopped. The draft is kept — the session resumes on what it was already
+   * doing, and there is nothing to send until it hands itself back (§7.2, §7.3).
+   */
   const submit = async () => {
+    if (isPaused) {
+      requestCredentials();
+      return;
+    }
     const text = draft.trim();
     if (!text) return;
     setDraft('');
@@ -110,7 +129,7 @@ export function ChatScreen() {
         userLine: `${connection.userId} · ${connection.conversationId}`,
         workingSpace: connection.workingSpace,
         phaseLabel: phaseLabel(status),
-        phaseKind: status === 'INTERRUPTED' ? 'interrupted' : isProcessing ? 'processing' : 'idle',
+        phaseKind: isPaused ? 'paused' : status === 'INTERRUPTED' ? 'interrupted' : isProcessing ? 'processing' : 'idle',
         onPhaseClick: () => navigate('/debug'),
         onReset: () => interrupt(),
       }
@@ -175,6 +194,28 @@ export function ChatScreen() {
           ))}
         </div>
 
+        {/* §7.2 — a banner, not a blocking box: the thread, Debug and History stay readable while
+            the session waits. The pop-in is on top of it until the user chooses "Later". */}
+        {isPaused && (
+          <div
+            style={{
+              margin: '0 24px 14px',
+              padding: '12px 16px',
+              borderRadius: 12,
+              border: '1px solid var(--amber)',
+              background: 'var(--amber-soft)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--amber)' }}>Session paused</span>
+            <span style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
+              {pauseSentence(pause)} Press send to enter new credentials and continue — or Stop to end it here.
+            </span>
+          </div>
+        )}
+
         {isCompleted && !endChoiceDismissed && (
           <div
             style={{
@@ -221,7 +262,13 @@ export function ChatScreen() {
               ref={textareaRef}
               rows={2}
               value={draft}
-              placeholder={isProcessing ? 'Send another message — it will queue for the next cycle…' : 'Ask something…'}
+              placeholder={
+                isPaused
+                  ? 'Paused — press send to enter new credentials and continue…'
+                  : isProcessing
+                    ? 'Send another message — it will queue for the next cycle…'
+                    : 'Ask something…'
+              }
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (slashOpen) {
@@ -262,7 +309,8 @@ export function ChatScreen() {
                 padding: '6px 0',
               }}
             />
-            {isProcessing && (
+            {/* Stop is the one action that depends on nothing, paused included (§7.3). */}
+            {(isProcessing || isPaused) && (
               <button
                 type="button"
                 aria-label="Stop / interrupt session"
@@ -287,8 +335,9 @@ export function ChatScreen() {
             )}
             <button
               type="button"
-              aria-label="Send message"
-              disabled={!draft.trim() || sending}
+              aria-label={isPaused ? 'Enter new credentials and resume' : 'Send message'}
+              title={isPaused ? 'Enter new credentials and resume the session' : undefined}
+              disabled={isPaused ? false : !draft.trim() || sending}
               onClick={submit}
               style={{
                 width: 40,
@@ -296,13 +345,13 @@ export function ChatScreen() {
                 flexShrink: 0,
                 borderRadius: 10,
                 border: 'none',
-                background: 'var(--navy)',
+                background: isPaused ? 'var(--amber)' : 'var(--navy)',
                 color: '#ffffff',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                opacity: !draft.trim() || sending ? 0.55 : 1,
-                cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
+                opacity: isPaused ? 1 : !draft.trim() || sending ? 0.55 : 1,
+                cursor: isPaused || (draft.trim() && !sending) ? 'pointer' : 'not-allowed',
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
@@ -310,12 +359,17 @@ export function ChatScreen() {
               </svg>
             </button>
           </div>
+          {isPaused && (
+            <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
+              Sending is what resumes the session — your draft is kept, and the conversation picks up where it stopped.
+            </span>
+          )}
           {isProcessing && (
             <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
               A message sent now is queued — applied once the current cycle finishes, unless you interrupt.
             </span>
           )}
-          {!isProcessing && !draft && availablePrompts.length > 0 && (
+          {!isProcessing && !isPaused && !draft && availablePrompts.length > 0 && (
             <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
               Type <span style={{ fontFamily: 'var(--font-mono)' }}>/</span> to insert one of your {availablePrompts.length} saved prompts.
             </span>
