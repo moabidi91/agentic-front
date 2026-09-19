@@ -9,7 +9,7 @@ echo.
 where node >nul 2>nul
 if errorlevel 1 (
   echo [ERREUR] Node.js n'est pas installe ou pas dans le PATH.
-  echo Installez Node.js (https://nodejs.org/) puis relancez ce script.
+  echo Installez Node.js depuis https://nodejs.org/ puis relancez ce script.
   pause
   exit /b 1
 )
