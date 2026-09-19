@@ -5,6 +5,7 @@ import type {
   HistorySession,
   LiveDbTable,
   ModelOption,
+  PauseReason,
   SessionSnapshot,
   SignInConfig,
   WhoAmI,
@@ -41,6 +42,35 @@ export interface ApiClient {
 
   /** §6 Interruption — existing mechanism (user_interrupt), no new backend need. */
   interrupt(conversationId: string): Promise<SessionSnapshot>;
+
+  /**
+   * §13 Reprise sur 401 — why the session is paused, or `null` when it is not.
+   *
+   * A 401 from the model does not fail the session: the backend moves it to
+   * `PAUSED`, keeps the conversation, the cycle, the pending message and the
+   * plans, and waits (ADR-025). The front learns it from `SessionSnapshot.status`
+   * and reads the detail here to say which call was refused, with which code,
+   * and since when.
+   */
+  pauseReason(conversationId: string): Promise<PauseReason | null>;
+
+  /**
+   * §13 Reprise sur 401 — the credentials of the active profile, posted before
+   * a resume. Same call the sign-in form makes; the values are written where the
+   * transport reads them and are never echoed back.
+   *
+   * Never log, persist or re-display a value handed to this method.
+   */
+  setCredentials(credentials: Record<string, string>): Promise<void>;
+
+  /**
+   * §13 Reprise sur 401 — continues a paused session where it stopped, in the
+   * same conversation, with the same cycles and plans. Called **after**
+   * `setCredentials`; the two are one gesture, in that order. Resuming with a
+   * token that is still wrong pauses the session again, which is a retry, not a
+   * failure.
+   */
+  resume(conversationId: string): Promise<SessionSnapshot>;
 
   /** Subscribe to session + chat updates. §8 Flux live (SSE, falls back to polling). */
   subscribeSession(

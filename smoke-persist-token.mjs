@@ -6,8 +6,12 @@ const shot = (name) => page.screenshot({ path: `/tmp/shots/persist-token-${name}
 
 await page.evaluate(() => localStorage.clear()).catch(() => {});
 
+// The mock serves one model profile at a time, like a real process (ADR-024 §2): `?model=`
+// picks which one, and the other cards are shown disabled. This script needs the profile
+// that declares a single implicit access token, so it asks for it by name.
+
 // --- First launch: pick a credential model, fill token, sign in ---
-await page.goto('http://localhost:5183/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5183/?model=generic-http', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 await page.getByRole('button', { name: /Continue/ }).click();
 await page.waitForURL('**/signin');
@@ -23,7 +27,7 @@ await page.waitForURL('**/chat');
 console.log('First sign-in (credential model) reached /chat — OK');
 
 // --- Second launch: must land back on step 1, prefilled, token empty, NOT auto-submitted ---
-await page.goto('http://localhost:5183/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5183/?model=generic-http', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 await page.getByRole('button', { name: /Continue/ }).click();
 await page.waitForURL('**/signin');

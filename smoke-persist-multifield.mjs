@@ -6,8 +6,12 @@ const shot = (name) => page.screenshot({ path: `/tmp/shots/persist-multifield-${
 
 await page.evaluate(() => localStorage.clear()).catch(() => {});
 
+// The mock serves one model profile at a time, like a real process (ADR-024 §2): `?model=`
+// picks which one, and the other cards are shown disabled. This script needs the profile
+// that declares an access token and a Chat ID, so it asks for it by name.
+
 // --- First launch: pick the multi-field model (access token + Chat ID), fill both ---
-await page.goto('http://localhost:5183/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5183/?model=templated-acme', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 await page.getByRole('button', { name: /Continue/ }).click();
 await page.waitForURL('**/signin');
@@ -49,7 +53,7 @@ if (prefs && Object.prototype.hasOwnProperty.call(prefs.credentials ?? {}, 'acce
 }
 
 // --- Second launch: chat_id should come back prefilled, access_token empty, no auto-submit ---
-await page.goto('http://localhost:5183/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5183/?model=templated-acme', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 await page.getByRole('button', { name: /Continue/ }).click();
 await page.waitForURL('**/signin');

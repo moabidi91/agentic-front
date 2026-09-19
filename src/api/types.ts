@@ -8,6 +8,9 @@
  */
 
 // ---- §5.1 Conversation state machine (11 states) ----
+// The last three are session-level states, not conversation ones: the backend
+// reports them verbatim on a session row (GET /admin/sessions → HistorySession.state),
+// so this union has to hold them or a history row has to lie about what it read.
 export type ConversationStatus =
   | 'NEW'
   | 'ACTIVE'
@@ -19,7 +22,13 @@ export type ConversationStatus =
   | 'READY'
   | 'COMPLETED'
   | 'FAILED'
-  | 'CLOSED';
+  | 'CLOSED'
+  /** Session stopped on a 401, waiting for credentials; not terminal — ADR-025 §2. */
+  | 'PAUSED'
+  /** Session owned by its loop — session state machine, ADR-007 (`READY → RUNNING`). */
+  | 'RUNNING'
+  /** Interruption cleanup in flight, before READY — session state machine, ADR-007. */
+  | 'INTERRUPTING';
 
 // ---- §5.2 Plan state machine ----
 export type PlanStatus =
@@ -73,6 +82,36 @@ export interface ModelOption {
   requiresCredentials: boolean;
   /** Fields this model needs at sign-in, beyond the user id — absent/empty means none. */
   credentialFields?: CredentialField[];
+  /**
+   * Whether this profile is the one the running backend serves. One model per
+   * process (ADR-024 §2): only the active profile can open a session, and
+   * choosing another means restarting the application. `GET /models` marks it
+   * and puts it first; the sign-in picker shows the others disabled rather than
+   * letting the user discover the refusal at the last click.
+   *
+   * Optional: a backend that does not report it leaves every card selectable,
+   * which is the behaviour the app had before the flag existed.
+   */
+  active?: boolean;
+}
+
+/**
+ * Why a session is paused, as `GET /sessions/{sid}/pause` returns it — the
+ * backend pauses a session on a 401 from the model instead of failing it
+ * (ADR-025, contrat-interface.md §13), and these five fields are everything a
+ * banner needs to say what happened. Nothing of the token is in here.
+ */
+export interface PauseReason {
+  /** `credentials_required` today — the only reason the backend pauses on. */
+  reason: string;
+  /** Error code of the refused call, e.g. `HTTP_401`. */
+  errorCode: string;
+  /** Error family, `AUTHN_ERROR` for a 401. */
+  errorType: string;
+  /** The remote operation that was refused: `INIT`, `POST` or `GET`. */
+  operation: string;
+  /** ISO 8601 instant the session was paused. */
+  since: string;
 }
 
 /**

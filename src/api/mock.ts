@@ -6,6 +6,7 @@ import type {
   HistorySession,
   LiveDbTable,
   ModelOption,
+  PauseReason,
   PlanTask,
   SessionSnapshot,
   SignInConfig,
@@ -36,6 +37,41 @@ const MOCK_MODELS: ModelOption[] = [
     ],
   },
 ];
+
+/** Default profile this in-memory process serves — the first card of the catalogue. */
+const DEFAULT_ACTIVE_MODEL_ID = 'local-fake';
+
+/**
+ * Which profile this mock serves. **One at a time**, like a real process (ADR-024 §2): the other
+ * cards of the catalogue are listed and shown disabled by the sign-in picker.
+ *
+ * `?model=<id>` on the page that loads the application picks another one — the mock's equivalent
+ * of restarting with another `models.active`, and the only way to change it, on purpose. Read
+ * **once**, when this module is loaded, because in-app navigation drops the query string; a new
+ * profile therefore means reloading the page, exactly like a restart. Outside a browser (a Node
+ * script importing this file) it is the default.
+ */
+const ACTIVE_MODEL_ID: string = (() => {
+  try {
+    const requested = new URLSearchParams(window.location.search).get('model');
+    if (requested !== null && MOCK_MODELS.some((m) => m.id === requested)) return requested;
+  } catch {
+    // no DOM (Node), or a location a sandbox refuses to read — the default stands
+  }
+  return DEFAULT_ACTIVE_MODEL_ID;
+})();
+
+/**
+ * The credential value that makes this mock behave like a model answering 401 — the one way to
+ * reach the paused state without a backend, so the pause banner, the credential pop-in and the
+ * resume gesture stay demoable (contrat-interface.md §13, ADR-025).
+ *
+ * Sign in with `expired` as the access token and send a message: the session pauses on
+ * `credentials_required`, exactly as the application would. Supplying any other value in the
+ * pop-in resumes it; supplying `expired` again pauses it again, which is what a wrong token
+ * really does. {@link MockApiClient.pauseSession} does the same thing directly.
+ */
+export const MOCK_EXPIRED_TOKEN = 'expired';
 
 const MOCK_SKILLS = ['release-checklist', 'db-migration-guide', 'incident-runbook', 'api-style-guide'];
 
@@ -83,15 +119,21 @@ export class MockApiClient implements ApiClient {
   private events = new Map<string, ProtocolLogEntry[]>();
   private auditChain: AuditEntry[] = [];
   private queuedText = new Map<string, string | null>();
+  private pauses = new Map<string, PauseReason>();
+  /** The last credentials handed over, sign-in or pop-in — only to decide whether they expired. */
+  private credentials: Record<string, string> = {};
 
   async whoAmI(): Promise<WhoAmI> {
     await delay(250);
     return { userId: 'hama.local' };
   }
 
+  /** The catalogue, active profile first, exactly one of them active (ADR-024 §2). */
   async listModels(): Promise<ModelOption[]> {
     await delay(350);
-    return MOCK_MODELS;
+    return MOCK_MODELS.map((model) => ({ ...model, active: model.id === ACTIVE_MODEL_ID })).sort(
+      (a, b) => Number(b.active) - Number(a.active),
+    );
   }
 
   async listKnownSkills(): Promise<string[]> {
@@ -106,6 +148,7 @@ export class MockApiClient implements ApiClient {
     this.sessions.set(conversationId, snapshot);
     this.messages.set(conversationId, []);
     this.events.set(conversationId, []);
+    this.credentials = { ...(config.credentials ?? {}) };
     const credentialKeys = Object.keys(config.credentials ?? {}).join(',') || 'none';
     this.logEvent(
       conversationId,
@@ -124,6 +167,18 @@ export class MockApiClient implements ApiClient {
   async sendMessage(conversationId: string, text: string): Promise<ChatMessage> {
     const snapshot = this.sessions.get(conversationId);
     if (!snapshot) throw new Error(`Unknown conversation ${conversationId}`);
+    // A paused session is continued by resume(), never by a message — the real route refuses it
+    // with 409 CONFLICT (contrat front/backend §3.6).
+    if (snapshot.status === 'PAUSED') throw new Error('Session is paused — provide credentials and resume');
+
+    // The model refuses the very first call when the token handed over has expired: the session
+    // pauses, keeping the message that triggered it (ADR-025).
+    if (this.hasExpiredCredentials()) {
+      const userMessage: ChatMessage = { id: rid('msg'), role: 'user', text, createdAt: now() };
+      this.pushMessage(conversationId, userMessage);
+      this.pauseSession(conversationId, 'POST');
+      return userMessage;
+    }
 
     const isBusy = snapshot.status !== 'READY' && snapshot.status !== 'NEW';
     const userMessage: ChatMessage = {
@@ -150,11 +205,71 @@ export class MockApiClient implements ApiClient {
     const snapshot = this.sessions.get(conversationId);
     if (!snapshot) throw new Error(`Unknown conversation ${conversationId}`);
     this.logEvent(conversationId, 'user_interrupt', `from ${snapshot.status}`);
+    // Accepted in every state, paused included — that is what keeps the blocked send button
+    // acceptable: Stop is never conditional (§7.3).
+    this.pauses.delete(conversationId);
     this.update(conversationId, { status: 'INTERRUPTED', currentPlan: snapshot.currentPlan ? { ...snapshot.currentPlan, status: 'INTERRUPTED' } : null });
     await delay(300);
     this.update(conversationId, { status: 'READY', currentCycleId: null, cycleType: null });
     this.queuedText.delete(conversationId);
     return this.sessions.get(conversationId)!;
+  }
+
+  /** §13 — why the session is paused, or `null` when it is not (the route answers 404 NOT_PAUSED). */
+  async pauseReason(conversationId: string): Promise<PauseReason | null> {
+    await delay(120);
+    return this.pauses.get(conversationId) ?? null;
+  }
+
+  /**
+   * §13 — the credentials of the active profile, as `POST /credentials` takes them. Nothing here
+   * keeps them beyond deciding whether they are the expired sentinel; no screen reads them back.
+   */
+  async setCredentials(credentials: Record<string, string>): Promise<void> {
+    await delay(200);
+    if (Object.keys(credentials).length === 0) throw new Error('No credential was posted');
+    this.credentials = { ...this.credentials, ...credentials };
+  }
+
+  /**
+   * §13 — continues a paused session where it stopped. Resuming with a token that is still the
+   * expired one pauses it again, indefinitely and without bound: a retry, not a failure
+   * (ADR-025 §5).
+   */
+  async resume(conversationId: string): Promise<SessionSnapshot> {
+    const snapshot = this.sessions.get(conversationId);
+    if (!snapshot) throw new Error(`Unknown conversation ${conversationId}`);
+    if (snapshot.status !== 'PAUSED') throw new Error(`Session ${conversationId} is not resumable`);
+    await delay(300);
+    this.logEvent(conversationId, 'session_resumed', 'credentials provided');
+    this.pauses.delete(conversationId);
+    this.update(conversationId, { status: 'READY' });
+    if (this.hasExpiredCredentials()) {
+      this.pauseSession(conversationId, 'POST');
+      return this.sessions.get(conversationId)!;
+    }
+    // The message the pause was holding is replayed, exactly as the loop would have.
+    const pending = this.messages.get(conversationId)?.filter((m) => m.role === 'user').at(-1);
+    if (pending) this.runCycle(conversationId, pending.text);
+    return this.sessions.get(conversationId)!;
+  }
+
+  /**
+   * Puts a session in the paused state the way a 401 from the model does, so the pause banner,
+   * the credential pop-in and the resume gesture are demoable without a backend. Signing in with
+   * {@link MOCK_EXPIRED_TOKEN} reaches the same place through the screens.
+   */
+  pauseSession(conversationId: string, operation: 'INIT' | 'POST' | 'GET' = 'POST'): void {
+    if (!this.sessions.has(conversationId)) return;
+    this.pauses.set(conversationId, {
+      reason: 'credentials_required',
+      errorCode: 'HTTP_401',
+      errorType: 'AUTHN_ERROR',
+      operation,
+      since: now(),
+    });
+    this.logEvent(conversationId, 'session_paused', `credentials_required on ${operation}`);
+    this.update(conversationId, { status: 'PAUSED' });
   }
 
   subscribeSession(conversationId: string, onUpdate: (snapshot: SessionSnapshot) => void): () => void {
@@ -212,6 +327,7 @@ export class MockApiClient implements ApiClient {
     this.sessions.clear();
     this.messages.clear();
     this.events.clear();
+    this.pauses.clear();
     this.auditChain = [];
   }
 
@@ -221,6 +337,11 @@ export class MockApiClient implements ApiClient {
   }
 
   // ---- internals ----
+
+  /** True when any value handed over is the expired sentinel — see {@link MOCK_EXPIRED_TOKEN}. */
+  private hasExpiredCredentials(): boolean {
+    return Object.values(this.credentials).some((value) => value.trim().toLowerCase() === MOCK_EXPIRED_TOKEN);
+  }
 
   private pushMessage(conversationId: string, message: ChatMessage) {
     this.messages.get(conversationId)?.push(message);

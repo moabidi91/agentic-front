@@ -24,10 +24,16 @@ export function conversationTone(status: ConversationStatus): StatusTone {
     case 'WAITING_MODEL_RESPONSE':
     case 'RUNNING_PLAN':
     case 'ROTATING':
+    // Session-level state of a stored row (HistorySession.state): the loop owns it.
+    case 'RUNNING':
       return 'progress';
     case 'WAITING_USER':
       return 'info';
     case 'INTERRUPTED':
+    // Session-level states: cleanup in flight, and stopped waiting for credentials.
+    // Both need the user's attention or their patience, neither is a failure.
+    case 'INTERRUPTING':
+    case 'PAUSED':
       return 'warning';
     case 'COMPLETED':
     case 'CLOSED':
