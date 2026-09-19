@@ -117,6 +117,19 @@
   line-height: 1;
 }
 
+@keyframes af-pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.af-pulse-dot {
+  animation: af-pulse-dot 1.3s ease-in-out infinite;
+}
+
 .af-overlay {
   position: fixed;
   inset: 0;

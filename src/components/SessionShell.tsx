@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AppShell } from './AppShell';
+import { AppShell, type ChatHeaderInfo } from './AppShell';
 import { useApi } from '../api/context';
 import { useSession } from '../session/SessionContext';
 import type { HistorySession } from '../api/types';
@@ -32,7 +32,16 @@ function ChatDebugTabs({ active }: { active: SessionTab }) {
   );
 }
 
-export function SessionShell({ active, children }: { active: SessionTab; children: ReactNode }) {
+export function SessionShell({
+  active,
+  chatHeader,
+  children,
+}: {
+  active: SessionTab;
+  /** Chat-only header pieces (session block, working folder, phase, reset) — see ChatScreen. */
+  chatHeader?: ChatHeaderInfo;
+  children: ReactNode;
+}) {
   const api = useApi();
   const { connection } = useSession();
   const [sessions, setSessions] = useState<HistorySession[]>([]);
@@ -42,7 +51,7 @@ export function SessionShell({ active, children }: { active: SessionTab; childre
   }, [api, connection?.conversationId]);
 
   return (
-    <AppShell tabs={<ChatDebugTabs active={active} />}>
+    <AppShell tabs={<ChatDebugTabs active={active} />} chatHeader={chatHeader}>
       <div style={{ flexGrow: 1, minHeight: 0, display: 'flex' }}>
         <aside
           style={{

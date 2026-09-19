@@ -1,47 +1,46 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useBranding } from '../branding/BrandingProvider';
-import { BrandIcon } from '../branding/icons';
 import { useSession } from '../session/SessionContext';
-import { ConfirmDialog } from './ConfirmDialog';
-
-interface MenuLink {
-  label: string;
-  hint: string;
-  onClick: () => void;
-}
+import { getInitials } from '../utils/initials';
+import { SettingsModal } from './SettingsModal';
 
 export function UserMenu() {
   const [open, setOpen] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
-  const { branding, resetBranding } = useBranding();
-  const { resetConfiguration } = useSession();
+  const { connection, resetConfiguration } = useSession();
 
-  const links: MenuLink[] = [
-    { label: 'App identity — name & icon', hint: 'Welcome', onClick: () => navigate('/welcome') },
-    { label: 'Model & transport', hint: 'Sign in', onClick: () => navigate('/signin') },
-    { label: 'State machine reference', hint: 'Docs', onClick: () => navigate('/state-machine') },
-    { label: 'Live database', hint: 'Admin', onClick: () => navigate('/live-database') },
-  ];
+  const initials = getInitials(connection?.userId);
+
+  const logout = () => {
+    setOpen(false);
+    // Ends the current sign-in only — app identity/branding is intentionally kept
+    // (that's what makes Logout different from Danger zone → Reset configuration).
+    resetConfiguration();
+    navigate('/signin');
+  };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label="User menu"
         style={{
-          width: 36,
-          height: 36,
+          width: 30,
+          height: 30,
           borderRadius: '50%',
           background: 'var(--navy)',
+          color: '#ffffff',
           border: 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          fontSize: 10.5,
+          fontWeight: 700,
+          letterSpacing: '0.02em',
         }}
       >
-        <BrandIcon id={branding.iconId} primary="rgba(255,255,255,0.9)" accent="var(--blue)" size={18} />
+        {initials}
       </button>
 
       {open && (
@@ -52,48 +51,20 @@ export function UserMenu() {
             style={{
               position: 'absolute',
               right: 0,
-              top: 44,
-              width: 260,
+              top: 40,
+              width: 190,
               zIndex: 50,
-              padding: 8,
+              padding: 6,
               boxShadow: 'var(--shadow-lg)',
               display: 'flex',
               flexDirection: 'column',
               gap: 2,
             }}
           >
-            {links.map((link) => (
-              <button
-                key={link.label}
-                onClick={() => {
-                  setOpen(false);
-                  link.onClick();
-                }}
-                style={{
-                  textAlign: 'left',
-                  background: 'none',
-                  border: 'none',
-                  padding: '9px 10px',
-                  borderRadius: 8,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-              >
-                <span>{link.label}</span>
-                <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 500 }}>{link.hint}</span>
-              </button>
-            ))}
-            <div style={{ height: 1, background: 'var(--border)', margin: '6px 2px' }} />
             <button
               onClick={() => {
                 setOpen(false);
-                setConfirmReset(true);
+                setSettingsOpen(true);
               }}
               style={{
                 textAlign: 'left',
@@ -102,31 +73,36 @@ export function UserMenu() {
                 padding: '9px 10px',
                 borderRadius: 8,
                 fontSize: 12.5,
-                fontWeight: 700,
-                color: 'var(--red)',
+                fontWeight: 600,
+                color: 'var(--text)',
               }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
             >
-              Reset configuration
+              Settings
+            </button>
+            <button
+              onClick={logout}
+              style={{
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                padding: '9px 10px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: 'var(--text)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+            >
+              Logout
             </button>
           </div>
         </>
       )}
 
-      {confirmReset && (
-        <ConfirmDialog
-          title="Reset configuration?"
-          description="This interrupts the current session, then clears your local sign-in and branding choices. You'll start again from Welcome."
-          confirmLabel="Reset"
-          danger
-          onCancel={() => setConfirmReset(false)}
-          onConfirm={() => {
-            setConfirmReset(false);
-            resetConfiguration();
-            resetBranding();
-            navigate('/welcome');
-          }}
-        />
-      )}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

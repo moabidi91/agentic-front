@@ -74,33 +74,34 @@ try {
   console.log('history drawer click skipped:', e.message);
 }
 
-// State machine screen via user menu
+// Settings modal (avatar → Settings) — State machine tab
 await page.getByRole('button', { name: 'User menu' }).click();
-await page.getByText('State machine reference').click();
-await page.waitForURL('**/state-machine');
-await page.waitForTimeout(300);
-await shot('13-state-machine-conv');
-await page.getByRole('button', { name: 'Plan' }).click();
-await shot('14-state-machine-plan');
-await page.getByRole('button', { name: 'Task' }).click();
-await shot('15-state-machine-task');
-await page.getByRole('button', { name: 'Context window' }).click();
-await shot('16-state-machine-ctx');
+await page.getByText('Settings', { exact: true }).click();
+await page.waitForTimeout(200);
+await shot('13-settings-identity');
+await page.getByText('State machine', { exact: true }).click();
+await page.waitForTimeout(200);
+await shot('13b-settings-state-machine-conv');
+await page.getByRole('button', { name: 'Plan', exact: true }).click();
+await shot('14-settings-state-machine-plan');
+await page.getByRole('button', { name: 'Task', exact: true }).click();
+await shot('15-settings-state-machine-task');
+await page.getByRole('button', { name: 'Context window', exact: true }).click();
+await shot('16-settings-state-machine-ctx');
 
-// Live database screen via user menu
-await page.getByRole('button', { name: 'User menu' }).click();
-await page.getByText('Live database').first().click();
-await page.waitForURL('**/live-database');
+// Settings modal — Live database tab
+await page.getByText('Live database', { exact: true }).click();
 await page.waitForTimeout(1200);
-await shot('17-live-database');
+await shot('17-settings-live-database');
 await page.getByRole('button', { name: 'Events (' }).click();
-await shot('18-live-database-events');
+await shot('18-settings-live-database-events');
 
-// Reset configuration flow, back to Welcome
-await page.getByRole('button', { name: 'User menu' }).click();
-await page.getByText('Reset configuration').click();
+// Settings modal — Danger zone → Reset configuration, back to Welcome
+await page.getByRole('button', { name: 'Reset configuration', exact: true }).click(); // left-nav tab
+await page.waitForTimeout(150);
+await page.getByRole('button', { name: 'Reset configuration', exact: true }).last().click(); // content button
 await shot('19-reset-confirm');
-await page.getByRole('button', { name: 'Reset' }).click();
+await page.getByRole('button', { name: 'Reset', exact: true }).click();
 await page.waitForURL('**/welcome');
 await shot('20-back-to-welcome');
 

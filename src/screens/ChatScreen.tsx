@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SessionShell } from '../components/SessionShell';
-import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { useSession } from '../session/SessionContext';
-import { conversationTone, toneColors } from '../components/statusColors';
 import { useAppSettings } from '../session/useAppSettings';
+import type { ChatHeaderInfo } from '../components/AppShell';
 import type { ConversationStatus } from '../api/types';
 
 const PROCESSING: ConversationStatus[] = ['ACTIVE', 'WAITING_MODEL_RESPONSE', 'RUNNING_PLAN', 'ROTATING'];
@@ -33,7 +32,7 @@ function phaseLabel(status: ConversationStatus): string {
 
 export function ChatScreen() {
   const navigate = useNavigate();
-  const { snapshot, messages, sendMessage, interrupt } = useSession();
+  const { snapshot, connection, messages, sendMessage, interrupt } = useSession();
   const { settings } = useAppSettings();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -70,10 +69,20 @@ export function ChatScreen() {
     }
   };
 
-  const tone = toneColors(conversationTone(status));
+  const chatHeader: ChatHeaderInfo | undefined = connection
+    ? {
+        sessionCode: connection.conversationId.slice(-6).toUpperCase(),
+        userLine: `${connection.userId} · ${connection.conversationId}`,
+        workingSpace: connection.workingSpace,
+        phaseLabel: phaseLabel(status),
+        phaseKind: status === 'INTERRUPTED' ? 'interrupted' : isProcessing ? 'processing' : 'idle',
+        onPhaseClick: () => navigate('/debug'),
+        onReset: () => interrupt(),
+      }
+    : undefined;
 
   return (
-    <SessionShell active="chat">
+    <SessionShell active="chat" chatHeader={chatHeader}>
       <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div
           style={{
@@ -84,11 +93,6 @@ export function ChatScreen() {
             gap: 10,
           }}
         >
-          <button onClick={() => navigate('/debug')} style={{ background: 'none', border: 'none', padding: 0 }}>
-            <Badge bg={tone.bg} color={tone.fg} dot>
-              {phaseLabel(status)}
-            </Badge>
-          </button>
           {snapshot?.currentPlan && (
             <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
               Plan: {snapshot.currentPlan.tasks.filter((t) => t.status === 'COMPLETED').length}/{snapshot.currentPlan.tasks.length} tasks ·{' '}
@@ -163,9 +167,18 @@ export function ChatScreen() {
         )}
 
         <div style={{ padding: '14px 24px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: 10,
+              border: '1px solid var(--border)',
+              borderRadius: 14,
+              padding: '8px 8px 8px 18px',
+              background: 'var(--surface-2)',
+            }}
+          >
             <textarea
-              className="af-textarea"
               rows={2}
               value={draft}
               placeholder={isProcessing ? 'Send another message — it will queue for the next cycle…' : 'Ask something…'}
@@ -176,16 +189,64 @@ export function ChatScreen() {
                   submit();
                 }
               }}
-              style={{ flexGrow: 1 }}
+              style={{
+                flexGrow: 1,
+                resize: 'none',
+                border: 'none',
+                background: 'none',
+                color: 'var(--text)',
+                fontSize: 14,
+                fontFamily: 'inherit',
+                padding: '6px 0',
+              }}
             />
             {isProcessing && (
-              <Button variant="danger" onClick={() => interrupt()}>
-                Stop
-              </Button>
+              <button
+                type="button"
+                aria-label="Stop / interrupt session"
+                onClick={() => interrupt()}
+                style={{
+                  width: 40,
+                  height: 40,
+                  flexShrink: 0,
+                  borderRadius: 10,
+                  border: '1px solid var(--red)',
+                  background: 'var(--red-soft)',
+                  color: 'var(--red)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+              </button>
             )}
-            <Button variant="primary" disabled={!draft.trim() || sending} onClick={submit}>
-              Send
-            </Button>
+            <button
+              type="button"
+              aria-label="Send message"
+              disabled={!draft.trim() || sending}
+              onClick={submit}
+              style={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                borderRadius: 10,
+                border: 'none',
+                background: 'var(--navy)',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: !draft.trim() || sending ? 0.55 : 1,
+                cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <path d="M3 11l18-8-8 18-2-8-8-2z" />
+              </svg>
+            </button>
           </div>
           {isProcessing && (
             <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
