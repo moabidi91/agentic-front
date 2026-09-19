@@ -17,10 +17,16 @@ Statut de chaque ligne :
 ## 2. Modèles / transports disponibles
 
 🟡 **Besoin nouveau** — `GET /models` (nom de route indicatif)
-- Réponse attendue : liste d'objets `{ "id", "name", "provider", "codec", "requires_credentials": bool }`.
+- Réponse attendue : liste d'objets `{ "id", "name", "provider", "codec", "requires_credentials": bool, "credential_fields"?: CredentialField[] }`.
 - S'appuie sur le registre existant côté backend (ADR-020 `transport.provider`, ADR-021 `transport.codec`, déjà listable en CLI via `transport list` / `codec list`) — le besoin est l'équivalent exposé en HTTP, pas un nouveau concept.
-- `requires_credentials` est le seul champ réellement nouveau : aujourd'hui rien ne dit au front si un modèle a besoin d'un jeton ou gère sa propre authentification.
-- Usage : liste de cartes sélectionnables (Sign in, étape 1) ; `requires_credentials` pilote l'affichage du champ Access token.
+- `requires_credentials` reste le champ minimal : aujourd'hui rien ne dit au front si un modèle a besoin d'un jeton ou gère sa propre authentification. `true` sans `credential_fields` est traité par le front comme un unique champ implicite "Access token" (secret) — comportement historique, toujours supporté pour les modèles qui n'ont pas encore de `credential_fields`.
+- `credential_fields` (nouveau, optionnel) — généralise `requires_credentials` pour les modèles qui ont besoin de plus qu'un simple jeton (ex. un Chat ID en plus du token, pour un provider "templated"). Liste d'objets :
+  - `key` (string) — identifiant du champ, utilisé tel quel comme clé dans le payload de connexion envoyé au backend (ex. `access_token`, `chat_id`).
+  - `label` (string) — libellé affiché au-dessus du champ dans l'UI.
+  - `placeholder` (string, optionnel).
+  - `secret` (bool, optionnel, **défaut `true` si absent — fail closed**) — si `false`, le front peut retenir la valeur localement (fichier de préférences de connexion, jamais transmis au backend en dehors de l'appel de connexion) pour éviter à l'utilisateur de la ressaisir à chaque lancement de l'app ; si `true` (ou absent), la valeur n'est jamais persistée côté front et doit être ressaisie à chaque lancement.
+- Le front construit le payload de connexion comme `credentials: { [key]: value, ... }` (un objet plat, une entrée par champ déclaré) plutôt qu'un unique `access_token` — à confirmer côté backend que c'est bien la forme attendue par la route de création de session une fois celle-ci écrite.
+- Usage : liste de cartes sélectionnables (Sign in, étape 1) ; `requires_credentials` / `credential_fields` pilotent le rendu dynamique des champs de connexion (un par entrée déclarée, ou le champ Access token implicite en repli) — voir aussi implementation-spec.md §6 et §7quater.
 
 ## 3. Skills
 

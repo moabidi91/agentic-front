@@ -82,11 +82,13 @@ Ce dont le front a besoin, fonctionnellement — voir [contrat-interface.md](con
 ## 6. Comportement du sélecteur de modèle (détail)
 
 1. Au chargement de l'écran Sign in (étape 1), le front appelle la liste des modèles disponibles (§5).
-2. Aucun modèle n'est présélectionné — l'utilisateur choisit explicitement (cf. maquette : liste de cartes sélectionnables avec un badge "Token required" / "No credentials").
-3. Dès qu'un modèle est sélectionné, le front lit son `requires_credentials` :
-   - `true` → afficher le champ Access token, le rendre obligatoire pour activer "Continue".
-   - `false` → masquer le champ, afficher à la place une note explicative ("This model manages its own authentication").
-4. Le choix du modèle est transmis à l'établissement de session (quel provider/codec activer côté backend).
+2. Aucun modèle n'est présélectionné — l'utilisateur choisit explicitement (cf. maquette : liste de cartes sélectionnables avec un badge "Token required" / "No credentials") — sauf reprise automatique d'une configuration déjà enregistrée localement (voir §7quater).
+3. Dès qu'un modèle est sélectionné, le front résout la liste de champs de connexion à afficher (généralise l'ancien comportement, qui ne connaissait qu'un jeton) :
+   - si le modèle déclare `credential_fields` (contrat-interface.md §2) → un champ par entrée de la liste, dans l'ordre donné ; type de saisie dérivé de `secret` (`password` si `secret` absent ou `true`, `text` si `secret: false`) ;
+   - sinon, si `requires_credentials: true` → repli historique : un unique champ implicite "Access token" (secret) ;
+   - sinon (`requires_credentials: false` et pas de `credential_fields`) → aucun champ, note explicative affichée à la place ("This model manages its own authentication").
+   - "Continue" reste désactivé tant que tous les champs requis par le modèle sélectionné n'ont pas une valeur non vide.
+4. Le choix du modèle, ainsi que les valeurs saisies pour chaque champ déclaré (`credentials: { [key]: value, ... }`, voir contrat-interface.md §2), sont transmis à l'établissement de session (quel provider/codec activer côté backend, plus les informations complémentaires éventuelles comme un Chat ID).
 
 ## 7. Skills et niveau d'effort (détail)
 
@@ -113,6 +115,14 @@ Ce dont le front a besoin, fonctionnellement — voir [contrat-interface.md](con
   - **Context window** (3 états : HEALTHY, WARNING, SATURATED) — avec la séquence de rotation déclenchée par SATURATED (résumé structuré → nouvelle conversation → `context_resume_request`/`ack`).
 - **Panneau latéral (toujours visible, indépendant de l'onglet actif)** : infos du cycle courant (`cycle_id`, `cycle_type`, statut, `retry_count`, `started_at`) et budget de session (`max_cycles`, `max_plans`, `max_total_duration_ms`) avec barres de consommation.
 - **Données** : dans la maquette, tout est statique/exemple. En vrai, le panneau latéral (cycle + budget) doit être alimenté par les champs déjà exposés pour la session courante (spec v1.1 §4.1, `session_budget`, `current_cycle_id`, etc.) — **pas de besoin backend nouveau**, juste du câblage sur des champs déjà prévus. Les onglets machine à états eux-mêmes n'affichent aucune donnée live : c'est un contenu de référence embarqué dans le front (texte + structure fixes), à maintenir en cohérence avec la spec backend si elle évolue.
+
+## 7quater. Persistance locale de la configuration de connexion (nouveau)
+
+- **Objectif** : éviter à un utilisateur qui relance l'app de tout resaisir (identité, modèle, dossier de travail, skills, effort, dossier de prompts) à chaque lancement — sauf action explicite "Reset configuration" (`UserMenu` → Danger zone). "Logout" (reconnexion rapide) ne touche pas à cette configuration enregistrée.
+- **Où** : entièrement front, aucun contrat backend — un fichier local géré par le front (Tauri : plugin Store, fichier `settings.json` dans le dossier de données de l'app ; navigateur/dev : `localStorage`).
+- **Ce qui est enregistré** : `userId`, `modelId`, `workingSpace`, `skills`, `effort`, `promptsFolderPath`, et `credentials` — mais pour ce dernier, **seulement les champs qu'un modèle a explicitement marqués `secret: false`** dans `credential_fields` (contrat-interface.md §2). Un champ sans `secret` déclaré, ou avec `secret: true`, n'est **jamais** écrit dans ce fichier quelle que soit sa valeur — y compris l'Access token implicite (repli `requires_credentials: true` sans `credential_fields`), qui reste donc toujours considéré secret et toujours ressaisi à chaque lancement.
+- **Au lancement** : le front relit ce fichier une fois au montage de l'écran Sign in ; s'il contient une configuration, il pré-remplit l'écran (modèle présélectionné, champs non-secrets déjà remplis) et ne saute automatiquement à l'étape 2 puis à la connexion que **si tous les champs requis par le modèle restauré sont déjà renseignés** — donc jamais pour un modèle qui a au moins un champ secret : l'utilisateur doit toujours le ressaisir une fois, avec tout le reste déjà prérempli autour.
+- **Garde-fou anti-soumission accidentelle** : l'automatisation (saut d'étape, soumission automatique) se déclenche uniquement sur la base de ce qui a été effectivement relu du fichier au montage de l'écran — jamais sur la saisie en direct de l'utilisateur dans un champ encore visible, pour qu'une complétion manuelle d'un champ secret ne déclenche jamais une soumission surprise du formulaire.
 
 ## 8. Gestion des erreurs
 
