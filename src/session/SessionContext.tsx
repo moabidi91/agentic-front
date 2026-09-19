@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApi } from '../api/context';
 import type { ChatMessage, EffortLevel, ModelOption, PromptRef, SessionSnapshot, SignInConfig, SkillRef } from '../api/types';
+import { saveSignInPrefs } from './signInPrefs';
 
 const FIRST_RUN_KEY = 'agentic-front.hasConnectedBefore.v1';
 
@@ -20,7 +21,7 @@ interface SessionContextValue {
   snapshot: SessionSnapshot | null;
   messages: ChatMessage[];
   isFirstRun: boolean;
-  signIn: (config: SignInConfig, model: ModelOption, prompts?: PromptRef[]) => Promise<void>;
+  signIn: (config: SignInConfig, model: ModelOption, prompts?: PromptRef[], promptsFolderPath?: string) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   interrupt: () => Promise<void>;
   markConnectedOnce: () => void;
@@ -51,7 +52,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => teardown, [teardown]);
 
   const signIn = useCallback(
-    async (config: SignInConfig, model: ModelOption, prompts: PromptRef[] = []) => {
+    async (config: SignInConfig, model: ModelOption, prompts: PromptRef[] = [], promptsFolderPath?: string) => {
       const snap = await api.signIn(config);
       teardown();
       setSnapshot(snap);
@@ -69,6 +70,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       unsubscribers.current.push(
         api.subscribeMessages(snap.conversationId, (m) => setMessages((prev) => [...prev, m])),
       );
+      // Remember this setup (never the token) so a returning launch doesn't redo it — see signInPrefs.ts.
+      saveSignInPrefs({
+        userId: config.userId,
+        modelId: config.modelId,
+        workingSpace: config.workingSpace,
+        skills: config.skills,
+        effort: config.effort,
+        promptsFolderPath,
+      }).catch(() => {});
     },
     [api, teardown],
   );

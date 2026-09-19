@@ -55,7 +55,9 @@ export function ConnectingScreen() {
   const [failed, setFailed] = useState<string | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
 
-  const state = location.state as { config?: SignInConfig; model?: ModelOption; prompts?: PromptRef[] } | null;
+  const state = location.state as
+    | { config?: SignInConfig; model?: ModelOption; prompts?: PromptRef[]; promptsFolderPath?: string }
+    | null;
 
   useEffect(() => {
     if (!state?.config || !state?.model) {
@@ -75,7 +77,7 @@ export function ConnectingScreen() {
       await new Promise((r) => setTimeout(r, 350));
       if (cancelled) return;
       try {
-        await signIn(state.config!, state.model!, state.prompts ?? []);
+        await signIn(state.config!, state.model!, state.prompts ?? [], state.promptsFolderPath);
         if (cancelled) return;
         setStepIndex(2);
         await new Promise((r) => setTimeout(r, 400));

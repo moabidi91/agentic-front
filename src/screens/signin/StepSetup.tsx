@@ -4,6 +4,7 @@ import type { EffortLevel, PromptRef, SkillRef } from '../../api/types';
 import { Chip } from '../../components/Chip';
 import { FieldHint, FieldLabel } from '../../components/Field';
 import { SelectableList } from '../../components/SelectableList';
+import { isTauri, readPromptsFromFolder } from '../../session/signInPrefs';
 import { useAppSettings, type SessionEndBehavior } from '../../session/useAppSettings';
 
 /** Above this many selections, a chip row stops being scannable — switch to a checkable list with a filter. */
@@ -20,14 +21,6 @@ const END_BEHAVIOR_OPTIONS: { id: SessionEndBehavior; label: string }[] = [
   { id: 'continue', label: 'Continue automatically' },
   { id: 'new', label: 'Start new automatically' },
 ];
-
-/**
- * True only inside an actual Tauri webview. Checked at runtime (not build time)
- * so the same bundle works both as `npm run dev` in a plain browser and packaged
- * with Tauri — see StepSetup's folder/skills pickers below.
- */
-const isTauri =
-  typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -47,6 +40,7 @@ export function StepSetup({
   setPrompts,
   effort,
   setEffort,
+  onPromptsFolderPicked,
   onBack,
   onSubmit,
   submitting,
@@ -59,6 +53,8 @@ export function StepSetup({
   setPrompts: Dispatch<SetStateAction<PromptRef[]>>;
   effort: EffortLevel;
   setEffort: (v: EffortLevel) => void;
+  /** Tauri only — reports the real folder path picked, so it can be remembered for next launch (see signInPrefs.ts). */
+  onPromptsFolderPicked?: (path: string) => void;
   onBack: () => void;
   onSubmit: () => void;
   submitting: boolean;
@@ -162,15 +158,9 @@ export function StepSetup({
         const { open } = await import('@tauri-apps/plugin-dialog');
         const dir = await open({ directory: true });
         if (typeof dir !== 'string') return;
-        const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
-        const entries = await readDir(dir);
-        const mdEntries = entries.filter((e) => !e.isDirectory && e.name?.toLowerCase().endsWith('.md'));
-        const loaded: PromptRef[] = [];
-        for (const entry of mdEntries) {
-          const content = await readTextFile(`${dir}/${entry.name}`);
-          loaded.push({ name: stripMdExtension(entry.name!), content });
-        }
+        const loaded = await readPromptsFromFolder(dir);
         addPrompts(loaded);
+        onPromptsFolderPicked?.(dir);
       } catch (err) {
         setPromptsError(err instanceof Error ? err.message : 'Could not read that folder.');
       }

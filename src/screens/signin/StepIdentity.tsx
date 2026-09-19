@@ -14,6 +14,7 @@ export function StepIdentity({
   accessToken,
   setAccessToken,
   onContinue,
+  preferredModelId,
 }: {
   userId: string;
   setUserId: (v: string) => void;
@@ -22,6 +23,8 @@ export function StepIdentity({
   accessToken: string;
   setAccessToken: (v: string) => void;
   onContinue: () => void;
+  /** Last successfully-used model id, restored from signInPrefs.ts — auto-selected once the model list loads. */
+  preferredModelId?: string;
 }) {
   const api = useApi();
   const navigate = useNavigate();
@@ -38,6 +41,14 @@ export function StepIdentity({
     api.listModels().then(setModels);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Separate from the effect above so it re-checks regardless of which of the two
+  // (model list vs. restored prefs) finishes loading first — no ordering assumption.
+  useEffect(() => {
+    if (!models || !preferredModelId || model) return;
+    const match = models.find((m) => m.id === preferredModelId);
+    if (match) setModel(match);
+  }, [models, preferredModelId, model, setModel]);
 
   const canContinue = userId.trim().length > 0 && model !== null && (!model.requiresCredentials || accessToken.trim().length > 0);
 

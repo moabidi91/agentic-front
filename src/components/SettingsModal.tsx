@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBranding } from '../branding/BrandingProvider';
 import { IdentityFieldsLive } from '../branding/IdentityFields';
 import { useSession } from '../session/SessionContext';
+import { clearSignInPrefs } from '../session/signInPrefs';
 import { StateMachineContent } from '../screens/StateMachineContent';
 import { LiveDatabaseContent } from '../screens/LiveDatabaseContent';
 import { Badge } from './Badge';
@@ -220,6 +221,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             setConfirmReset(false);
             resetConfiguration();
             resetBranding();
+            clearSignInPrefs().catch(() => {});
             onClose();
             navigate('/welcome');
           }}
