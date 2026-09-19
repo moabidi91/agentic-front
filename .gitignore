@@ -13,6 +13,9 @@ dist-ssr
 *.local
 src-tauri/target
 src-tauri/gen
+env.txt
+.env
+.env.*
 
 # Editor directories and files
 .vscode/*
